@@ -9,7 +9,7 @@
 cmake_minimum_required(VERSION 3.18)
 project(blender_web CXX C)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # ---------------------------------------------------------------------------
@@ -35,10 +35,14 @@ include(FetchContent)
 FetchContent_Declare(
   fmt
   GIT_REPOSITORY https://github.com/fmtlib/fmt.git
-  GIT_TAG        10.2.1
+  GIT_TAG        9.1.0
   GIT_SHALLOW    TRUE
 )
-FetchContent_MakeAvailable(fmt)
+# Header-only mode + disable consteval (Emscripten clang bug with consteval).
+# FMT_CONSTEVAL must be defined empty so the #ifndef guard is hit.
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DFMT_HEADER_ONLY=1 -DFMT_CONSTEVAL=")
+FetchContent_Populate(fmt)
+set(FMT_INCLUDE_DIR ${fmt_SOURCE_DIR}/include)
 
 # ---------------------------------------------------------------------------
 # Fetch Eigen (header-only)
@@ -81,7 +85,6 @@ set(BLI_SOURCES
   ${BLI_INTERN}/math_vec.cc
   ${BLI_INTERN}/math_vector.cc
   ${BLI_INTERN}/noise.cc
-  ${BLI_INTERN}/noise_c.cc
   ${BLI_INTERN}/easing.cc
 
   # Memory & containers
@@ -279,15 +282,39 @@ target_include_directories(blender_web PRIVATE
 # ---------------------------------------------------------------------------
 
 target_compile_definitions(blender_web PRIVATE
-  # Disable features not available in WASM
-  -DWITH_ASSERT_ABORT=0
+  WITH_ASSERT_ABORT=0
+)
+
+# Suppress warnings from Blender code that aren't errors in the native build.
+target_compile_options(blender_web PRIVATE
+  -Wno-sign-conversion
+  -Wno-c++11-narrowing
+  -Wno-implicit-int-float-conversion
+  -Wno-deprecated-declarations
+  -Wno-shorten-64-to-32
+  -Wno-unused-but-set-variable
+  -Wno-ambiguous-reversed-operator
+)
+
+# Some BLI files use #pragma GCC diagnostic error which overrides command-line
+# flags in clang. Use -w to suppress ALL warnings for these specific files.
+set_source_files_properties(
+  ${BLI_INTERN}/string_utf8.cc
+  ${BLI_INTERN}/math_geom.cc
+  ${BLI_INTERN}/math_color.cc
+  ${BLI_INTERN}/convexhull_2d.cc
+  ${BLI_INTERN}/polyfill_2d.cc
+  ${BLI_INTERN}/polyfill_2d_beautify.cc
+  ${BLI_INTERN}/scanfill.cc
+  ${BLI_INTERN}/scanfill_utils.cc
+  PROPERTIES COMPILE_FLAGS "-w"
 )
 
 # ---------------------------------------------------------------------------
-# Link fmtlib
+# fmtlib include (header-only mode)
 # ---------------------------------------------------------------------------
 
-target_link_libraries(blender_web PRIVATE fmt::fmt)
+target_include_directories(blender_web PRIVATE ${FMT_INCLUDE_DIR})
 
 # ---------------------------------------------------------------------------
 # Emscripten-specific flags
@@ -299,16 +326,15 @@ if(EMSCRIPTEN)
   )
 
   target_link_options(blender_web PRIVATE
-    --bind
-    -s WASM=1
-    -s MODULARIZE=1
-    -s EXPORT_NAME='createBlenderWeb'
-    -s ALLOW_MEMORY_GROWTH=1
-    -s INITIAL_MEMORY=67108864
-    -s STACK_SIZE=1048576
-    -s NO_EXIT_RUNTIME=1
-    -s ENVIRONMENT='web'
-    -s EXPORT_ES6=1
+    -lembind
+    -sWASM=1
+    -sMODULARIZE=1
+    -sEXPORT_NAME=createBlenderWeb
+    -sALLOW_MEMORY_GROWTH=1
+    -sINITIAL_MEMORY=67108864
+    -sSTACK_SIZE=1048576
+    -sNO_EXIT_RUNTIME=1
+    -sENVIRONMENT=web
   )
 
   # Optimization for release

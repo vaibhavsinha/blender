@@ -8,8 +8,6 @@
 
 #include "BLI_threads.h"
 
-#include "MEM_guardedalloc.h"
-
 namespace blender {
 
 static int threads_override_num = 0;
@@ -72,13 +70,12 @@ void BLI_mutex_end(ThreadMutex * /*mutex*/) {}
 
 ThreadMutex *BLI_mutex_alloc()
 {
-  ThreadMutex *mutex = (ThreadMutex *)MEM_callocN(sizeof(ThreadMutex), "ThreadMutex");
-  return mutex;
+  return (ThreadMutex *)calloc(1, sizeof(ThreadMutex));
 }
 
 void BLI_mutex_free(ThreadMutex *mutex)
 {
-  MEM_freeN(mutex);
+  free(mutex);
 }
 
 /* Spin locks — no-ops */
@@ -96,24 +93,27 @@ void BLI_rw_mutex_end(ThreadRWMutex * /*mutex*/) {}
 
 ThreadRWMutex *BLI_rw_mutex_alloc()
 {
-  ThreadRWMutex *mutex = (ThreadRWMutex *)MEM_callocN(sizeof(ThreadRWMutex), "ThreadRWMutex");
-  return mutex;
+  return (ThreadRWMutex *)calloc(1, sizeof(ThreadRWMutex));
 }
 
 void BLI_rw_mutex_free(ThreadRWMutex *mutex)
 {
-  MEM_freeN(mutex);
+  free(mutex);
 }
 
-/* Ticket mutex */
+/* Ticket mutex — use opaque pointer with a small dummy allocation */
+struct TicketMutexDummy {
+  int dummy;
+};
+
 TicketMutex *BLI_ticket_mutex_alloc()
 {
-  return (TicketMutex *)MEM_callocN(sizeof(TicketMutex), "TicketMutex");
+  return (TicketMutex *)calloc(1, sizeof(TicketMutexDummy));
 }
 
 void BLI_ticket_mutex_free(TicketMutex *ticket)
 {
-  MEM_freeN(ticket);
+  free(ticket);
 }
 
 void BLI_ticket_mutex_lock(TicketMutex * /*ticket*/) {}
@@ -137,15 +137,19 @@ void BLI_condition_end(ThreadCondition * /*cond*/) {}
 void BLI_thread_lock(int /*type*/) {}
 void BLI_thread_unlock(int /*type*/) {}
 
-/* Thread queue — synchronous stubs */
+/* Thread queue — synchronous stubs with opaque type */
+struct ThreadQueueDummy {
+  int dummy;
+};
+
 ThreadQueue *BLI_thread_queue_init()
 {
-  return (ThreadQueue *)MEM_callocN(sizeof(ThreadQueue), "ThreadQueue");
+  return (ThreadQueue *)calloc(1, sizeof(ThreadQueueDummy));
 }
 
 void BLI_thread_queue_free(ThreadQueue *queue)
 {
-  MEM_freeN(queue);
+  free(queue);
 }
 
 uint64_t BLI_thread_queue_push(ThreadQueue * /*queue*/,

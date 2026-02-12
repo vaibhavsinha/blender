@@ -6,9 +6,7 @@
 #include <cstdint>
 #include <vector>
 
-extern "C" {
 #include "BLI_math_vector.h"
-}
 
 /* Vertex/face flags */
 enum MeshFlags : uint32_t {

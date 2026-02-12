@@ -9,8 +9,6 @@
 
 #include "BLI_task.h"
 
-#include "MEM_guardedalloc.h"
-
 namespace blender {
 
 /* -------------------------------------------------------------------- */
@@ -49,7 +47,7 @@ struct TaskPool {
 
 TaskPool *BLI_task_pool_create(void *userdata, eTaskPriority /*priority*/)
 {
-  TaskPool *pool = (TaskPool *)MEM_callocN(sizeof(TaskPool), "TaskPool");
+  TaskPool *pool = (TaskPool *)calloc(1, sizeof(TaskPool));
   pool->userdata = userdata;
   pool->canceled = false;
   return pool;
@@ -77,7 +75,7 @@ TaskPool *BLI_task_pool_create_no_threads(void *userdata)
 
 void BLI_task_pool_free(TaskPool *pool)
 {
-  MEM_freeN(pool);
+  free(pool);
 }
 
 void BLI_task_pool_push(TaskPool *pool,
@@ -131,7 +129,7 @@ void BLI_task_parallel_range(int start,
   void *userdata_chunk = nullptr;
 
   if (settings && settings->userdata_chunk_size > 0 && settings->userdata_chunk) {
-    userdata_chunk = MEM_mallocN(settings->userdata_chunk_size, "task_chunk");
+    userdata_chunk = malloc(settings->userdata_chunk_size);
     if (settings->func_init) {
       settings->func_init(userdata, userdata_chunk);
     }
@@ -154,7 +152,7 @@ void BLI_task_parallel_range(int start,
       settings->func_free(userdata, userdata_chunk);
     }
     else {
-      MEM_freeN(userdata_chunk);
+      free(userdata_chunk);
     }
   }
 }
@@ -191,7 +189,7 @@ struct TaskGraph {
 
 TaskGraph *BLI_task_graph_create()
 {
-  return MEM_new<TaskGraph>(__func__);
+  return new TaskGraph();
 }
 
 void BLI_task_graph_work_and_wait(TaskGraph * /*task_graph*/)
@@ -205,9 +203,9 @@ void BLI_task_graph_free(TaskGraph *task_graph)
     if (node->free_func && node->user_data) {
       node->free_func(node->user_data);
     }
-    MEM_delete(node);
+    delete node;
   }
-  MEM_delete(task_graph);
+  delete task_graph;
 }
 
 TaskNode *BLI_task_graph_node_create(TaskGraph *task_graph,
@@ -215,7 +213,7 @@ TaskNode *BLI_task_graph_node_create(TaskGraph *task_graph,
                                      void *user_data,
                                      TaskGraphNodeFreeFunction free_func)
 {
-  TaskNode *node = MEM_new<TaskNode>(__func__);
+  TaskNode *node = new TaskNode();
   node->run = run;
   node->user_data = user_data;
   node->free_func = free_func;

@@ -9,9 +9,9 @@
 #include <map>
 #include <unordered_map>
 
-extern "C" {
 #include "BLI_math_vector.h"
-}
+
+using namespace blender;
 
 /* -------------------------------------------------------------------- */
 /** \name Helpers

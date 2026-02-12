@@ -9,20 +9,12 @@
 
 using namespace emscripten;
 
-/* Helper: copy a float[4][4] matrix to JS Float32Array (column-major for WebGL) */
+/* Helper: copy a float[4][4] matrix to JS Float32Array for WebGL.
+ * BLI matrices use mat[col][row] convention, which is already column-major
+ * in memory — exactly what WebGL expects. No transposition needed. */
 static val matrix_to_float32(const float mat[4][4])
 {
-  /* Blender stores matrices row-major, WebGL expects column-major.
-   * BLI matrices are [row][col], OpenGL/WebGL expects column-major.
-   * Blender's convention: mat[row][col], stored row-major.
-   * We need to transpose for WebGL. */
-  float transposed[16];
-  for (int r = 0; r < 4; r++) {
-    for (int c = 0; c < 4; c++) {
-      transposed[c * 4 + r] = mat[r][c];
-    }
-  }
-  return val(typed_memory_view(16, transposed)).call<val>("slice");
+  return val(typed_memory_view(16, &mat[0][0])).call<val>("slice");
 }
 
 /* Helper: build render data and return as JS object */
@@ -97,17 +89,18 @@ static void object_set_location(SceneObject &obj, float x, float y, float z)
 /* Normal matrix helper (3x3 from 4x4 transform) */
 static val object_get_normal_matrix(SceneObject &obj)
 {
-  /* Extract upper-left 3x3, transpose of inverse for normals.
-   * For uniform scale, it's just the upper-left 3x3. */
+  /* Extract upper-left 3x3 in column-major order for WebGL.
+   * BLI convention: mat[col][row]. WebGL mat3 is column-major.
+   * So mat[0][0..2] is column 0, mat[1][0..2] is column 1, etc. */
   float nm[9];
   nm[0] = obj.transform[0][0];
-  nm[1] = obj.transform[1][0];
-  nm[2] = obj.transform[2][0];
-  nm[3] = obj.transform[0][1];
+  nm[1] = obj.transform[0][1];
+  nm[2] = obj.transform[0][2];
+  nm[3] = obj.transform[1][0];
   nm[4] = obj.transform[1][1];
-  nm[5] = obj.transform[2][1];
-  nm[6] = obj.transform[0][2];
-  nm[7] = obj.transform[1][2];
+  nm[5] = obj.transform[1][2];
+  nm[6] = obj.transform[2][0];
+  nm[7] = obj.transform[2][1];
   nm[8] = obj.transform[2][2];
   return val(typed_memory_view(9, nm)).call<val>("slice");
 }
