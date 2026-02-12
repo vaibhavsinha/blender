@@ -20,6 +20,8 @@ export interface EditMesh {
   isFaceSelected(index: number): boolean;
   selectedFaceCount(): number;
   translateSelected(dx: number, dy: number, dz: number): void;
+  rotateSelected(axisX: number, axisY: number, axisZ: number, angleRadians: number): void;
+  scaleSelected(sx: number, sy: number, sz: number): void;
   extrudeSelectedFaces(distance: number): void;
   subdivideSelectedFaces(): void;
   deleteSelectedFaces(): void;

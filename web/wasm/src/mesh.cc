@@ -9,6 +9,7 @@
 #include <map>
 #include <unordered_map>
 
+#include "BLI_math_rotation.h"
 #include "BLI_math_vector.h"
 
 using namespace blender;
@@ -210,6 +211,106 @@ void EditMesh::translate_selected(float dx, float dy, float dz)
   }
 
   /* Update normals of affected faces */
+  for (auto &f : faces) {
+    if (f.flags & MESH_FLAG_SELECT) {
+      compute_face_normal(f);
+    }
+  }
+}
+
+void EditMesh::rotate_selected(float axis_x, float axis_y, float axis_z, float angle_radians)
+{
+  /* Collect vertices used by selected faces */
+  std::vector<bool> affected(vertices.size(), false);
+  for (const auto &f : faces) {
+    if (!(f.flags & MESH_FLAG_SELECT)) {
+      continue;
+    }
+    for (int i = 0; i < f.vert_count; i++) {
+      affected[f.indices[i]] = true;
+    }
+  }
+
+  /* Compute centroid of affected vertices */
+  float centroid[3] = {0.0f, 0.0f, 0.0f};
+  int count = 0;
+  for (size_t i = 0; i < vertices.size(); i++) {
+    if (affected[i]) {
+      add_v3_v3(centroid, vertices[i].position);
+      count++;
+    }
+  }
+  if (count == 0) {
+    return;
+  }
+  mul_v3_fl(centroid, 1.0f / (float)count);
+
+  /* Build quaternion from axis-angle */
+  float axis[3] = {axis_x, axis_y, axis_z};
+  normalize_v3(axis);
+  float q[4];
+  axis_angle_to_quat(q, axis, angle_radians);
+
+  /* Rotate each affected vertex around centroid */
+  for (size_t i = 0; i < vertices.size(); i++) {
+    if (!affected[i]) {
+      continue;
+    }
+    float rel[3];
+    sub_v3_v3v3(rel, vertices[i].position, centroid);
+    mul_qt_v3(q, rel);
+    add_v3_v3v3(vertices[i].position, centroid, rel);
+  }
+
+  /* Update normals */
+  for (auto &f : faces) {
+    if (f.flags & MESH_FLAG_SELECT) {
+      compute_face_normal(f);
+    }
+  }
+}
+
+void EditMesh::scale_selected(float sx, float sy, float sz)
+{
+  /* Collect vertices used by selected faces */
+  std::vector<bool> affected(vertices.size(), false);
+  for (const auto &f : faces) {
+    if (!(f.flags & MESH_FLAG_SELECT)) {
+      continue;
+    }
+    for (int i = 0; i < f.vert_count; i++) {
+      affected[f.indices[i]] = true;
+    }
+  }
+
+  /* Compute centroid of affected vertices */
+  float centroid[3] = {0.0f, 0.0f, 0.0f};
+  int count = 0;
+  for (size_t i = 0; i < vertices.size(); i++) {
+    if (affected[i]) {
+      add_v3_v3(centroid, vertices[i].position);
+      count++;
+    }
+  }
+  if (count == 0) {
+    return;
+  }
+  mul_v3_fl(centroid, 1.0f / (float)count);
+
+  /* Scale each affected vertex's offset from centroid */
+  for (size_t i = 0; i < vertices.size(); i++) {
+    if (!affected[i]) {
+      continue;
+    }
+    float rel[3];
+    sub_v3_v3v3(rel, vertices[i].position, centroid);
+    rel[0] *= sx;
+    rel[1] *= sy;
+    rel[2] *= sz;
+    add_v3_v3v3(vertices[i].position, centroid, rel);
+  }
+
+  /* Update normals */
   for (auto &f : faces) {
     if (f.flags & MESH_FLAG_SELECT) {
       compute_face_normal(f);

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 
 export type EditMode = "object" | "edit";
-export type Tool = "select" | "grab" | "extrude" | "subdivide";
+export type Tool = "select" | "grab" | "rotate" | "scale" | "annotate" | "measure";
 
 interface SceneState {
   mode: EditMode;

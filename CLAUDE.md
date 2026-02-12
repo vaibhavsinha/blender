@@ -2,7 +2,7 @@
 
 > **Project**: Trimmed-down Blender running in the browser via WebAssembly + React
 > **Repo**: Fork of official Blender (`https://github.com/vaibhavsinha/blender.git`)
-> **Status**: Exploration complete, no code written yet
+> **Status**: WASM module + React app functional — viewport, mesh editing, and toolbar tools working
 
 ---
 
@@ -328,17 +328,98 @@ Add:
 
 ---
 
-## 11. Conventions
+## 11. Current Web App Architecture
 
-- **Commits**: Every 30-60 minutes, conventional commit messages
-- **Branch**: `main` (working branch)
-- **Build**: Not yet configured (Phase 1 task)
-- **Testing**: Manual browser testing initially
+### Directory Structure
+```
+web/
+├── wasm/                          — C++ WASM module (Emscripten)
+│   ├── src/
+│   │   ├── mesh.h / mesh.cc      — EditMesh: vertices, faces, selection, transforms, mesh ops
+│   │   ├── scene.h               — Scene, Camera, SceneObject (inline implementations)
+│   │   └── bindings.cc           — Emscripten embind → JS API
+│   ├── CMakeLists.txt            — Emscripten build config
+│   └── build/                    — Build output (blender_web.js + .wasm)
+└── app/                           — React + Vite frontend
+    ├── public/
+    │   ├── blender_web.js        — Compiled WASM loader (copied from wasm/build/)
+    │   └── blender_web.wasm      — Compiled WASM binary (copied from wasm/build/)
+    └── src/
+        ├── types/wasm.d.ts       — TS interfaces for WASM module (EditMesh, Camera, Scene, etc.)
+        ├── store/sceneStore.ts   — Zustand store (mode, activeTool, mesh stats, status)
+        ├── hooks/
+        │   ├── useViewport.ts    — WebGL rendering, orbit/pan/zoom camera
+        │   └── useMeshOperations.ts — Mesh ops + modal tool state (grab/rotate/scale)
+        └── components/
+            ├── App.tsx           — Root layout
+            ├── ViewportCanvas.tsx — WebGL canvas + keyboard/mouse + overlay wrapper
+            ├── Toolbar.tsx       — Left toolbar with tool icons + active highlighting
+            ├── AnnotationOverlay.tsx — 2D freehand drawing overlay
+            └── MeasureOverlay.tsx   — Click-to-measure distance overlay
+```
+
+### WASM ↔ React Bridge
+- **EditMesh** methods exposed via Emscripten `embind`: `selectFace`, `translateSelected`, `rotateSelected`, `scaleSelected`, `extrudeSelectedFaces`, `subdivideSelectedFaces`, `deleteSelectedFaces`, `buildRenderData`
+- **Camera** orbital controls: `orbit(dAz, dEl)`, `pan(dx, dy)`, `zoom(delta)`, matrix getters
+- **Scene** management: `addCube`, `addPlane`, `getActiveObject`, `getCamera`
+- Render data returned as typed arrays (`Float32Array`, `Uint32Array`) — zero-copy to WebGL
+
+### Implemented Toolbar Tools
+| Tool | Key | Mode | Implementation |
+|------|-----|------|----------------|
+| Select | click | Persistent | Face cycling on left click |
+| Select All | A | One-shot | `toggleSelectAll()` |
+| Grab/Move | G | Modal | Mouse → `translateSelected`, click confirm, Escape cancel |
+| Rotate | R | Modal | Mouse dx → Y-axis rotation via quaternion, click/Escape |
+| Scale | S | Modal | Mouse dx → uniform scale, click/Escape |
+| Extrude | E | One-shot | `extrudeSelectedFaces(0.5)` |
+| Subdivide | W | One-shot | `subdivideSelectedFaces()` |
+| Delete | X / Del | One-shot | `deleteSelectedFaces()` |
+| Annotate | toolbar | Persistent | 2D canvas overlay, freehand white polylines |
+| Measure | toolbar | Persistent | 2D canvas overlay, click two points → dashed line + px label |
+| Add Cube | toolbar | One-shot | `scene.addCube()` |
+
+### Tool Type (Zustand store)
+```typescript
+type Tool = "select" | "grab" | "rotate" | "scale" | "annotate" | "measure";
+```
+Extrude/Subdivide/Delete are one-shot actions, not persistent tool modes.
+
+### Cursor Feedback
+Each tool maps to a CSS cursor. Modal overrides: grab active → `grabbing`, rotate active → `grabbing`, scale active → `col-resize`.
 
 ---
 
-## 12. Key File Paths (via `git show HEAD:<path>`)
+## 12. Conventions
 
+- **Commits**: Every 30-60 minutes, conventional commit messages
+- **Branch**: `claude_code_hackathon` (working branch)
+- **Build**: WASM via Emscripten (`emcmake cmake` + `emmake make`), React via Vite
+- **Testing**: Manual browser testing (`npm run dev`)
+
+---
+
+## 13. Key File Paths
+
+### Web App (checked out, editable)
+```
+web/wasm/src/mesh.h                              — EditMesh class: vertices, faces, transforms
+web/wasm/src/mesh.cc                             — EditMesh implementation
+web/wasm/src/scene.h                             — Scene, Camera, SceneObject
+web/wasm/src/bindings.cc                         — Emscripten embind JS ↔ C++
+web/wasm/CMakeLists.txt                          — WASM build config
+web/app/src/types/wasm.d.ts                      — TS types for WASM module
+web/app/src/store/sceneStore.ts                  — Zustand store (Tool, EditMode, state)
+web/app/src/hooks/useViewport.ts                 — WebGL rendering + camera controls
+web/app/src/hooks/useMeshOperations.ts           — Mesh ops + modal tool state
+web/app/src/components/ViewportCanvas.tsx         — Canvas + keyboard/mouse + overlays
+web/app/src/components/Toolbar.tsx                — Left toolbar (SVG icons, tool switching)
+web/app/src/components/AnnotationOverlay.tsx      — 2D freehand drawing overlay
+web/app/src/components/MeasureOverlay.tsx         — Distance measurement overlay
+web/app/src/components/App.tsx                    — Root layout
+```
+
+### Blender Source (via `git show HEAD:<path>`)
 ```
 CMakeLists.txt                                          — Top-level build
 build_files/cmake/config/blender_lite.cmake             — Minimal build config
@@ -360,3 +441,13 @@ source/blender/makesdna/DNA_mesh_types.h                — Mesh struct
 source/blender/editors/space_view3d/space_view3d.cc     — Viewport registration
 source/blender/bmesh/bmesh.hh                           — BMesh API
 ```
+## To Run the Project
+
+1. **Without WASM** (immediate): `cd web/app && npm run dev` — renders a fallback cube with full orbit/zoom/pan
+2. **With WASM** (requires Emscripten SDK):
+   ```bash
+   cd web/wasm && mkdir -p build && cd build
+   emcmake cmake .. && emmake make -j$(nproc)
+   cp blender_web.js blender_web.wasm ../../app/public/
+   cd ../../app && npm run dev
+   ```

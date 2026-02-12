@@ -62,6 +62,8 @@ class EditMesh {
 
   /* Transform */
   void translate_selected(float dx, float dy, float dz);
+  void rotate_selected(float axis_x, float axis_y, float axis_z, float angle_radians);
+  void scale_selected(float sx, float sy, float sz);
 
   /* Mesh operations */
   void extrude_selected_faces(float distance);

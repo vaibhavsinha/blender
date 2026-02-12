@@ -7,6 +7,11 @@ export function useMeshOperations(
   markDirty: () => void,
 ) {
   const grabActiveRef = useRef(false);
+  const grabCumulativeRef = useRef({ dx: 0, dy: 0, dz: 0 });
+  const rotateActiveRef = useRef(false);
+  const rotateAngleCumulativeRef = useRef(0);
+  const scaleActiveRef = useRef(false);
+  const scaleCumulativeRef = useRef(1);
   const { setMeshStats, setStatusMessage } = useSceneStore();
 
   const updateStats = useCallback(() => {
@@ -107,16 +112,122 @@ export function useMeshOperations(
     [sceneRef, markDirty],
   );
 
-  const startGrab = useCallback(() => {
-    grabActiveRef.current = true;
-    setStatusMessage("Grab: move mouse, click to confirm");
-  }, [setStatusMessage]);
+  const rotateSelected = useCallback(
+    (ax: number, ay: number, az: number, angle: number) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const obj = scene.getActiveObject();
+      if (!obj) return;
+      obj.getMesh().rotateSelected(ax, ay, az, angle);
+      markDirty();
+    },
+    [sceneRef, markDirty],
+  );
 
-  const endGrab = useCallback(() => {
-    grabActiveRef.current = false;
-    setStatusMessage("Ready");
-    updateStats();
-  }, [updateStats, setStatusMessage]);
+  const scaleSelected = useCallback(
+    (sx: number, sy: number, sz: number) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const obj = scene.getActiveObject();
+      if (!obj) return;
+      obj.getMesh().scaleSelected(sx, sy, sz);
+      markDirty();
+    },
+    [sceneRef, markDirty],
+  );
+
+  /* ── Grab modal ── */
+
+  const startGrab = useCallback((): boolean => {
+    const scene = sceneRef.current;
+    if (!scene) return false;
+    const obj = scene.getActiveObject();
+    if (!obj || obj.getMesh().selectedFaceCount() === 0) {
+      setStatusMessage("No faces selected for grab");
+      return false;
+    }
+    grabActiveRef.current = true;
+    grabCumulativeRef.current = { dx: 0, dy: 0, dz: 0 };
+    setStatusMessage("Grab: move mouse, click to confirm, Escape to cancel");
+    return true;
+  }, [sceneRef, setStatusMessage]);
+
+  const endGrab = useCallback(
+    (cancel: boolean) => {
+      if (cancel) {
+        const { dx, dy, dz } = grabCumulativeRef.current;
+        translateSelected(-dx, -dy, -dz);
+      }
+      grabActiveRef.current = false;
+      grabCumulativeRef.current = { dx: 0, dy: 0, dz: 0 };
+      setStatusMessage("Ready");
+      updateStats();
+    },
+    [translateSelected, updateStats, setStatusMessage],
+  );
+
+  /* ── Rotate modal ── */
+
+  const startRotate = useCallback((): boolean => {
+    const scene = sceneRef.current;
+    if (!scene) return false;
+    const obj = scene.getActiveObject();
+    if (!obj || obj.getMesh().selectedFaceCount() === 0) {
+      setStatusMessage("No faces selected for rotate");
+      return false;
+    }
+    rotateActiveRef.current = true;
+    rotateAngleCumulativeRef.current = 0;
+    setStatusMessage("Rotate: move mouse, click to confirm, Escape to cancel");
+    return true;
+  }, [sceneRef, setStatusMessage]);
+
+  const endRotate = useCallback(
+    (cancel: boolean) => {
+      if (cancel) {
+        const totalAngle = rotateAngleCumulativeRef.current;
+        rotateSelected(0, 1, 0, -totalAngle);
+      }
+      rotateActiveRef.current = false;
+      rotateAngleCumulativeRef.current = 0;
+      setStatusMessage("Ready");
+      updateStats();
+    },
+    [rotateSelected, updateStats, setStatusMessage],
+  );
+
+  /* ── Scale modal ── */
+
+  const startScale = useCallback((): boolean => {
+    const scene = sceneRef.current;
+    if (!scene) return false;
+    const obj = scene.getActiveObject();
+    if (!obj || obj.getMesh().selectedFaceCount() === 0) {
+      setStatusMessage("No faces selected for scale");
+      return false;
+    }
+    scaleActiveRef.current = true;
+    scaleCumulativeRef.current = 1;
+    setStatusMessage("Scale: move mouse, click to confirm, Escape to cancel");
+    return true;
+  }, [sceneRef, setStatusMessage]);
+
+  const endScale = useCallback(
+    (cancel: boolean) => {
+      if (cancel) {
+        const totalFactor = scaleCumulativeRef.current;
+        if (totalFactor !== 0) {
+          const inv = 1 / totalFactor;
+          scaleSelected(inv, inv, inv);
+        }
+      }
+      scaleActiveRef.current = false;
+      scaleCumulativeRef.current = 1;
+      setStatusMessage("Ready");
+      updateStats();
+    },
+    [scaleSelected, updateStats, setStatusMessage],
+  );
 
   return {
     selectFace,
@@ -125,8 +236,19 @@ export function useMeshOperations(
     subdivideSelected,
     deleteSelected,
     translateSelected,
+    rotateSelected,
+    scaleSelected,
     startGrab,
     endGrab,
     grabActiveRef,
+    grabCumulativeRef,
+    startRotate,
+    endRotate,
+    rotateActiveRef,
+    rotateAngleCumulativeRef,
+    startScale,
+    endScale,
+    scaleActiveRef,
+    scaleCumulativeRef,
   };
 }

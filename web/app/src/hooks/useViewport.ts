@@ -75,7 +75,7 @@ void main() {
   float fade = 1.0 - smoothstep(20.0, 50.0, dist);
   vec3 color = vec3(0.35);
   if(abs(v_world_pos.z) < line.y * 1.5) color = vec3(0.8, 0.2, 0.2);
-  if(abs(v_world_pos.x) < line.x * 1.5) color = vec3(0.2, 0.2, 0.8);
+  if(abs(v_world_pos.x) < line.x * 1.5) color = vec3(0.2, 0.8, 0.2);
   frag_color = vec4(color, gv * fade * 0.5);
 }`;
 

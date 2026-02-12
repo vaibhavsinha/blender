@@ -1,8 +1,20 @@
-import { useRef, useEffect, useCallback } from "react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import type { Scene } from "../types/wasm";
+import type { Tool } from "../store/sceneStore";
 import { useViewport } from "../hooks/useViewport";
 import { useMeshOperations } from "../hooks/useMeshOperations";
 import { useSceneStore } from "../store/sceneStore";
+import { AnnotationOverlay } from "./AnnotationOverlay";
+import { MeasureOverlay } from "./MeasureOverlay";
+
+const TOOL_CURSORS: Record<Tool, string> = {
+  select: "default",
+  grab: "move",
+  rotate: "grab",
+  scale: "ew-resize",
+  annotate: "crosshair",
+  measure: "crosshair",
+};
 
 interface ViewportCanvasProps {
   sceneRef: React.RefObject<Scene | null>;
@@ -10,9 +22,12 @@ interface ViewportCanvasProps {
 
 export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const viewport = useViewport(canvasRef, sceneRef);
   const meshOps = useMeshOperations(sceneRef, viewport.markDirty);
   const { mode, activeTool, setActiveTool, setStatusMessage } = useSceneStore();
+
+  const [overlaySize, setOverlaySize] = useState({ width: 0, height: 0 });
 
   // Track mouse state
   const isDraggingRef = useRef(false);
@@ -23,7 +38,58 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
   const dragDistanceRef = useRef(0);
   const CLICK_THRESHOLD = 4; // px — below this is a click, above is a drag
 
-  // Initialize WebGL on mount (use stable refs to avoid re-init on every render)
+  // Cursor state — derived from active tool + modal overrides
+  const [cursor, setCursor] = useState("default");
+
+  const updateCursor = useCallback(() => {
+    if (meshOps.grabActiveRef.current) {
+      setCursor("grabbing");
+    } else if (meshOps.rotateActiveRef.current) {
+      setCursor("grabbing");
+    } else if (meshOps.scaleActiveRef.current) {
+      setCursor("col-resize");
+    } else {
+      setCursor(TOOL_CURSORS[activeTool] || "default");
+    }
+  }, [activeTool]); // meshOps refs are stable — only activeTool is reactive
+
+  useEffect(() => {
+    updateCursor();
+  }, [activeTool, updateCursor]);
+
+  // Track overlay size — seed synchronously to avoid 0x0 initial render
+  useEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const rect = wrapper.getBoundingClientRect();
+    setOverlaySize({ width: rect.width, height: rect.height });
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        setOverlaySize({
+          width: entry.contentRect.width,
+          height: entry.contentRect.height,
+        });
+      }
+    });
+    observer.observe(wrapper);
+    return () => observer.disconnect();
+  }, []);
+
+  // Cancel active modals when tool changes externally (e.g. toolbar click)
+  useEffect(() => {
+    if (meshOps.grabActiveRef.current && activeTool !== "grab") {
+      meshOps.endGrab(true);
+    }
+    if (meshOps.rotateActiveRef.current && activeTool !== "rotate") {
+      meshOps.endRotate(true);
+    }
+    if (meshOps.scaleActiveRef.current && activeTool !== "scale") {
+      meshOps.endScale(true);
+    }
+    updateCursor();
+  }, [activeTool]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Initialize WebGL on mount
   useEffect(() => {
     viewport.init();
     viewport.markDirty();
@@ -42,13 +108,24 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
       mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
       dragDistanceRef.current = 0;
 
-      // If in grab mode, click to confirm
+      // If in a modal mode, click to confirm
       if (meshOps.grabActiveRef.current) {
-        meshOps.endGrab();
+        meshOps.endGrab(false);
+        updateCursor();
+        return;
+      }
+      if (meshOps.rotateActiveRef.current) {
+        meshOps.endRotate(false);
+        updateCursor();
+        return;
+      }
+      if (meshOps.scaleActiveRef.current) {
+        meshOps.endScale(false);
+        updateCursor();
         return;
       }
     },
-    [meshOps],
+    [meshOps, updateCursor],
   );
 
   const handleMouseMove = useCallback(
@@ -65,7 +142,27 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
 
       // Grab mode: translate selected faces
       if (meshOps.grabActiveRef.current) {
-        meshOps.translateSelected(dx * 0.01, -dy * 0.01, 0);
+        const tdx = dx * 0.01;
+        const tdy = -dy * 0.01;
+        meshOps.translateSelected(tdx, tdy, 0);
+        meshOps.grabCumulativeRef.current.dx += tdx;
+        meshOps.grabCumulativeRef.current.dy += tdy;
+        return;
+      }
+
+      // Rotate mode: rotate around Y axis
+      if (meshOps.rotateActiveRef.current) {
+        const angle = dx * 0.01;
+        meshOps.rotateSelected(0, 1, 0, angle);
+        meshOps.rotateAngleCumulativeRef.current += angle;
+        return;
+      }
+
+      // Scale mode: uniform scale
+      if (meshOps.scaleActiveRef.current) {
+        const factor = 1 + dx * 0.005;
+        meshOps.scaleSelected(factor, factor, factor);
+        meshOps.scaleCumulativeRef.current *= factor;
         return;
       }
 
@@ -169,40 +266,94 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
           meshOps.deleteSelected();
           break;
         case "g":
-          if (!meshOps.grabActiveRef.current) {
-            setActiveTool("grab");
-            meshOps.startGrab();
+          if (
+            !meshOps.grabActiveRef.current &&
+            !meshOps.rotateActiveRef.current &&
+            !meshOps.scaleActiveRef.current
+          ) {
+            if (meshOps.startGrab()) {
+              setActiveTool("grab");
+              updateCursor();
+            }
+          }
+          break;
+        case "r":
+          if (
+            !meshOps.grabActiveRef.current &&
+            !meshOps.rotateActiveRef.current &&
+            !meshOps.scaleActiveRef.current
+          ) {
+            if (meshOps.startRotate()) {
+              setActiveTool("rotate");
+              updateCursor();
+            }
+          }
+          break;
+        case "s":
+          if (
+            !meshOps.grabActiveRef.current &&
+            !meshOps.rotateActiveRef.current &&
+            !meshOps.scaleActiveRef.current
+          ) {
+            if (meshOps.startScale()) {
+              setActiveTool("scale");
+              updateCursor();
+            }
           }
           break;
         case "escape":
           if (meshOps.grabActiveRef.current) {
-            meshOps.endGrab();
+            meshOps.endGrab(true);
+          } else if (meshOps.rotateActiveRef.current) {
+            meshOps.endRotate(true);
+          } else if (meshOps.scaleActiveRef.current) {
+            meshOps.endScale(true);
           }
-          setActiveTool("select");
+          // Don't reset tool when annotate/measure is active — let their own Escape handlers run
+          if (activeTool !== "annotate" && activeTool !== "measure") {
+            setActiveTool("select");
+          }
+          updateCursor();
           break;
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [meshOps, setActiveTool, setStatusMessage]);
+  }, [activeTool, meshOps, setActiveTool, setStatusMessage, updateCursor]);
 
   return (
-    <canvas
-      ref={canvasRef}
-      style={{
-        flex: 1,
-        display: "block",
-        cursor: meshOps.grabActiveRef.current ? "move" : "default",
-      }}
-      onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
-      onMouseLeave={() => {
-        isDraggingRef.current = false;
-        mouseButtonRef.current = -1;
-      }}
-      onContextMenu={handleContextMenu}
-    />
+    <div
+      ref={wrapperRef}
+      style={{ flex: 1, position: "relative", overflow: "hidden" }}
+    >
+      <canvas
+        ref={canvasRef}
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "block",
+          cursor,
+        }}
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={handleMouseUp}
+        onMouseLeave={() => {
+          isDraggingRef.current = false;
+          mouseButtonRef.current = -1;
+        }}
+        onContextMenu={handleContextMenu}
+      />
+      <AnnotationOverlay
+        active={activeTool === "annotate"}
+        width={overlaySize.width}
+        height={overlaySize.height}
+      />
+      <MeasureOverlay
+        active={activeTool === "measure"}
+        width={overlaySize.width}
+        height={overlaySize.height}
+      />
+    </div>
   );
 }
