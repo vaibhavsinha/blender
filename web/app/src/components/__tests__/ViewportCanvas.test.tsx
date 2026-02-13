@@ -17,6 +17,8 @@ vi.mock("../../hooks/useViewport", () => ({
     startRenderLoop: vi.fn(),
     stopRenderLoop: vi.fn(),
     fallbackCamera: { current: {} },
+    getGizmoHitInfo: vi.fn(() => null),
+    scaleAxisRef: { current: null },
   }),
 }));
 

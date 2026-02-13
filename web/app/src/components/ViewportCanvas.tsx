@@ -32,6 +32,9 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
   const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
   const [renameInput, setRenameInput] = useState<{ x: number; y: number; value: string } | null>(null);
 
+  // Scale gizmo axis constraint
+  const scaleAxisRef = useRef<"x" | "y" | "z" | "uniform" | null>(null);
+
   // Track mouse state
   const isDraggingRef = useRef(false);
   const mouseButtonRef = useRef(-1);
@@ -88,6 +91,8 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
     }
     if (meshOps.scaleActiveRef.current && activeTool !== "scale") {
       meshOps.endScale(true);
+      scaleAxisRef.current = null;
+      viewport.scaleAxisRef.current = null;
     }
     updateCursor();
   }, [activeTool]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -143,6 +148,18 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
     [sceneRef],
   );
 
+  const getGizmoCenter = useCallback((): [number, number, number] => {
+    const scene = sceneRef.current;
+    if (scene) {
+      const obj = scene.getActiveObject();
+      if (obj) {
+        const loc = obj.getLocation();
+        return [loc[0], loc[1], loc[2]];
+      }
+    }
+    return [0, 0, 0];
+  }, [sceneRef]);
+
   // Handle mouse down
   const handleMouseDown = useCallback(
     (e: React.MouseEvent) => {
@@ -166,11 +183,32 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
       }
       if (meshOps.scaleActiveRef.current) {
         meshOps.endScale(false);
+        scaleAxisRef.current = null;
+        viewport.scaleAxisRef.current = null;
         updateCursor();
         return;
       }
+
+      // When scale tool active and no modal running, check for gizmo handle click
+      if (activeTool === "scale" && e.button === 0) {
+        const canvas = canvasRef.current;
+        if (canvas) {
+          const rect = canvas.getBoundingClientRect();
+          const hitAxis = viewport.getGizmoHitInfo(
+            e.clientX - rect.left, e.clientY - rect.top,
+            rect.width, rect.height, getGizmoCenter(),
+          );
+          if (hitAxis && meshOps.startScale()) {
+            scaleAxisRef.current = hitAxis;
+            viewport.scaleAxisRef.current = hitAxis;
+            updateCursor();
+            setStatusMessage(`Scale ${hitAxis === "uniform" ? "uniform" : hitAxis.toUpperCase()}: move mouse, click to confirm`);
+            return;
+          }
+        }
+      }
     },
-    [meshOps, updateCursor],
+    [meshOps, updateCursor, activeTool, viewport, getGizmoCenter, setStatusMessage],
   );
 
   const handleMouseMove = useCallback(
@@ -203,11 +241,26 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
         return;
       }
 
-      // Scale mode: uniform scale
+      // Scale mode: per-axis or uniform
       if (meshOps.scaleActiveRef.current) {
         const factor = 1 + dx * 0.005;
-        meshOps.scaleSelected(factor, factor, factor);
-        meshOps.scaleCumulativeRef.current *= factor;
+        const axis = scaleAxisRef.current;
+        let sx = 1, sy = 1, sz = 1;
+        if (axis === "x") sx = factor;
+        else if (axis === "y") sy = factor;
+        else if (axis === "z") sz = factor;
+        else { sx = factor; sy = factor; sz = factor; }
+        meshOps.scaleSelected(sx, sy, sz);
+        meshOps.scaleCumulativeRef.current.sx *= sx;
+        meshOps.scaleCumulativeRef.current.sy *= sy;
+        meshOps.scaleCumulativeRef.current.sz *= sz;
+        // Status feedback
+        const cum = meshOps.scaleCumulativeRef.current;
+        if (axis && axis !== "uniform") {
+          setStatusMessage(`Scale ${axis.toUpperCase()}: ${cum[axis === "x" ? "sx" : axis === "y" ? "sy" : "sz"].toFixed(3)}`);
+        } else {
+          setStatusMessage(`Scale: ${cum.sx.toFixed(3)}`);
+        }
         return;
       }
 
@@ -228,7 +281,7 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
         viewport.handlePan(dx, dy);
       }
     },
-    [viewport, meshOps],
+    [viewport, meshOps, setStatusMessage],
   );
 
   const handleMouseUp = useCallback(
@@ -385,6 +438,17 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
           break;
       }
 
+      // Axis constraint keys during active scale modal
+      if (meshOps.scaleActiveRef.current) {
+        const k = e.key.toLowerCase();
+        if (k === "x" || k === "y" || k === "z") {
+          scaleAxisRef.current = k;
+          viewport.scaleAxisRef.current = k;
+          setStatusMessage(`Scale ${k.toUpperCase()} axis`);
+          return;
+        }
+      }
+
       switch (e.key.toLowerCase()) {
         case "a":
           meshOps.toggleSelectAll();
@@ -434,6 +498,8 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
             !meshOps.scaleActiveRef.current
           ) {
             if (meshOps.startScale()) {
+              scaleAxisRef.current = "uniform";
+              viewport.scaleAxisRef.current = "uniform";
               setActiveTool("scale");
               updateCursor();
             }
@@ -446,6 +512,8 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
             meshOps.endRotate(true);
           } else if (meshOps.scaleActiveRef.current) {
             meshOps.endScale(true);
+            scaleAxisRef.current = null;
+            viewport.scaleAxisRef.current = null;
           }
           // Don't reset tool when annotate/measure is active — let their own Escape handlers run
           if (activeTool !== "annotate" && activeTool !== "measure") {
@@ -458,7 +526,7 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTool, mode, meshOps, setActiveTool, setStatusMessage, updateCursor, contextMenu, duplicateObject, removeObject, startRename]);
+  }, [activeTool, mode, meshOps, setActiveTool, setStatusMessage, updateCursor, contextMenu, duplicateObject, removeObject, startRename, viewport]);
 
   return (
     <div

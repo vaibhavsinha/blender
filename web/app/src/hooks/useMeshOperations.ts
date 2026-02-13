@@ -11,7 +11,7 @@ export function useMeshOperations(
   const rotateActiveRef = useRef(false);
   const rotateAngleCumulativeRef = useRef(0);
   const scaleActiveRef = useRef(false);
-  const scaleCumulativeRef = useRef(1);
+  const scaleCumulativeRef = useRef({ sx: 1, sy: 1, sz: 1 });
   const { setMeshStats, setStatusMessage } = useSceneStore();
 
   const updateStats = useCallback(() => {
@@ -252,7 +252,7 @@ export function useMeshOperations(
       return false;
     }
     scaleActiveRef.current = true;
-    scaleCumulativeRef.current = 1;
+    scaleCumulativeRef.current = { sx: 1, sy: 1, sz: 1 };
     setStatusMessage("Scale: move mouse, click to confirm, Escape to cancel");
     return true;
   }, [sceneRef, setStatusMessage]);
@@ -260,14 +260,13 @@ export function useMeshOperations(
   const endScale = useCallback(
     (cancel: boolean) => {
       if (cancel) {
-        const totalFactor = scaleCumulativeRef.current;
-        if (totalFactor !== 0) {
-          const inv = 1 / totalFactor;
-          scaleSelected(inv, inv, inv);
+        const { sx, sy, sz } = scaleCumulativeRef.current;
+        if (sx !== 0 && sy !== 0 && sz !== 0) {
+          scaleSelected(1 / sx, 1 / sy, 1 / sz);
         }
       }
       scaleActiveRef.current = false;
-      scaleCumulativeRef.current = 1;
+      scaleCumulativeRef.current = { sx: 1, sy: 1, sz: 1 };
       setStatusMessage("Ready");
       updateStats();
     },

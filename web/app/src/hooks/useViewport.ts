@@ -218,6 +218,10 @@ export function useViewport(
   const gridShaderRef = useRef<ShaderProgram | null>(null);
   const objectBuffersRef = useRef<ObjectBuffers[]>([]);
   const gridVaoRef = useRef<WebGLVertexArrayObject | null>(null);
+  const gizmoVaoRef = useRef<WebGLVertexArrayObject | null>(null);
+  const gizmoCircleVaoRef = useRef<WebGLVertexArrayObject | null>(null);
+  const gizmoCircleBufRef = useRef<WebGLBuffer | null>(null);
+  const scaleAxisRef = useRef<"x" | "y" | "z" | "uniform" | null>(null);
   const fallbackCameraRef = useRef(new FallbackCamera());
   const animFrameRef = useRef(0);
   const needsUploadRef = useRef(true);
@@ -326,6 +330,284 @@ export function useViewport(
     [],
   );
 
+  const CIRCLE_SEGMENTS = 48;
+  const GIZMO_HANDLE_HALF = 0.05;
+
+  const initGizmo = useCallback((gl: WebGL2RenderingContext) => {
+    // Axis lines + handle squares: 30 vertices (90 floats)
+    const verts = new Float32Array(90);
+    let vi = 0;
+    const put = (x: number, y: number, z: number) => { verts[vi++] = x; verts[vi++] = y; verts[vi++] = z; };
+
+    // Vertices 0-1: X axis line
+    put(0, 0, 0); put(1, 0, 0);
+    // Vertices 2-3: Y axis line
+    put(0, 0, 0); put(0, 1, 0);
+    // Vertices 4-5: Z axis line
+    put(0, 0, 0); put(0, 0, 1);
+
+    const h = GIZMO_HANDLE_HALF;
+    // Vertices 6-13: X handle square (YZ plane at x=1.0), 4 line segments
+    put(1, -h, -h); put(1, h, -h);
+    put(1, h, -h);  put(1, h, h);
+    put(1, h, h);   put(1, -h, h);
+    put(1, -h, h);  put(1, -h, -h);
+
+    // Vertices 14-21: Y handle square (XZ plane at y=1.0)
+    put(-h, 1, -h); put(h, 1, -h);
+    put(h, 1, -h);  put(h, 1, h);
+    put(h, 1, h);   put(-h, 1, h);
+    put(-h, 1, h);  put(-h, 1, -h);
+
+    // Vertices 22-29: Z handle square (XY plane at z=1.0)
+    put(-h, -h, 1); put(h, -h, 1);
+    put(h, -h, 1);  put(h, h, 1);
+    put(h, h, 1);   put(-h, h, 1);
+    put(-h, h, 1);  put(-h, -h, 1);
+
+    const vao = gl.createVertexArray()!;
+    gl.bindVertexArray(vao);
+    const buf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    gizmoVaoRef.current = vao;
+
+    // Circle VAO (dynamic buffer, updated each frame to face camera)
+    const circleVao = gl.createVertexArray()!;
+    gl.bindVertexArray(circleVao);
+    const circleBuf = gl.createBuffer()!;
+    gl.bindBuffer(gl.ARRAY_BUFFER, circleBuf);
+    gl.bufferData(gl.ARRAY_BUFFER, CIRCLE_SEGMENTS * 2 * 3 * 4, gl.DYNAMIC_DRAW);
+    gl.enableVertexAttribArray(0);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.bindVertexArray(null);
+    gizmoCircleVaoRef.current = circleVao;
+    gizmoCircleBufRef.current = circleBuf;
+  }, []);
+
+  const getGizmoCenter = useCallback((scene: Scene | null): [number, number, number] | null => {
+    if (scene) {
+      const obj = scene.getActiveObject();
+      if (obj) {
+        const loc = obj.getLocation();
+        return [loc[0], loc[1], loc[2]];
+      }
+    }
+    return [0, 0, 0];
+  }, []);
+
+  const renderGizmo = useCallback((
+    gl: WebGL2RenderingContext,
+    wireShader: ShaderProgram,
+    viewMatrix: Float32Array,
+    projMatrix: Float32Array,
+    eyePos: Float32Array,
+    center: [number, number, number],
+    activeAxis: "x" | "y" | "z" | "uniform" | null,
+  ) => {
+    // Compute constant screen-size scale based on camera distance
+    const dx = eyePos[0] - center[0];
+    const dy = eyePos[1] - center[1];
+    const dz = eyePos[2] - center[2];
+    const cameraDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const gizmoScale = cameraDist * 0.15;
+
+    // Build model matrix: scale + translate to center
+    const m = new Float32Array(16);
+    m[0] = gizmoScale; m[5] = gizmoScale; m[10] = gizmoScale;
+    m[12] = center[0]; m[13] = center[1]; m[14] = center[2]; m[15] = 1;
+
+    gl.useProgram(wireShader.program);
+    gl.uniformMatrix4fv(wireShader.uniforms["u_view"], false, viewMatrix);
+    gl.uniformMatrix4fv(wireShader.uniforms["u_projection"], false, projMatrix);
+    gl.uniformMatrix4fv(wireShader.uniforms["u_model"], false, m);
+
+    gl.disable(gl.DEPTH_TEST);
+
+    // Draw axis lines and handle squares
+    gl.bindVertexArray(gizmoVaoRef.current);
+
+    // X axis: line (verts 0-1) + handle (verts 6-13)
+    const xColor = activeAxis === "x" ? [1, 1, 0.2] : [1, 0.2, 0.2];
+    gl.uniform3f(wireShader.uniforms["u_color"]!, xColor[0], xColor[1], xColor[2]);
+    gl.drawArrays(gl.LINES, 0, 2);    // X axis line
+    gl.drawArrays(gl.LINES, 6, 8);    // X handle square
+
+    // Y axis: line (verts 2-3) + handle (verts 14-21)
+    const yColor = activeAxis === "y" ? [1, 1, 0.2] : [0.2, 1, 0.2];
+    gl.uniform3f(wireShader.uniforms["u_color"]!, yColor[0], yColor[1], yColor[2]);
+    gl.drawArrays(gl.LINES, 2, 2);    // Y axis line
+    gl.drawArrays(gl.LINES, 14, 8);   // Y handle square
+
+    // Z axis: line (verts 4-5) + handle (verts 22-29)
+    const zColor = activeAxis === "z" ? [1, 1, 0.2] : [0.2, 0.4, 1];
+    gl.uniform3f(wireShader.uniforms["u_color"]!, zColor[0], zColor[1], zColor[2]);
+    gl.drawArrays(gl.LINES, 4, 2);    // Z axis line
+    gl.drawArrays(gl.LINES, 22, 8);   // Z handle square
+
+    // Draw uniform circle in camera-facing plane
+    const circleBuf = gizmoCircleBufRef.current;
+    if (circleBuf && gizmoCircleVaoRef.current) {
+      // Compute camera-facing right/up vectors
+      const fwd = [dx, dy, dz];
+      const fwdLen = cameraDist || 1;
+      fwd[0] /= fwdLen; fwd[1] /= fwdLen; fwd[2] /= fwdLen;
+
+      const worldUp = [0, 1, 0];
+      // right = cross(fwd, worldUp)
+      let rx = fwd[1] * worldUp[2] - fwd[2] * worldUp[1];
+      let ry = fwd[2] * worldUp[0] - fwd[0] * worldUp[2];
+      let rz = fwd[0] * worldUp[1] - fwd[1] * worldUp[0];
+      let rl = Math.sqrt(rx * rx + ry * ry + rz * rz);
+      if (rl < 0.001) {
+        // Camera looking straight down/up — use Z as up
+        rx = 1; ry = 0; rz = 0; rl = 1;
+      }
+      rx /= rl; ry /= rl; rz /= rl;
+      // up = cross(right, fwd)
+      const ux = ry * fwd[2] - rz * fwd[1];
+      const uy = rz * fwd[0] - rx * fwd[2];
+      const uz = rx * fwd[1] - ry * fwd[0];
+
+      const circleRadius = 0.2; // in gizmo-local units (scaled by gizmoScale via model matrix)
+      const circleVerts = new Float32Array(CIRCLE_SEGMENTS * 2 * 3);
+      for (let i = 0; i < CIRCLE_SEGMENTS; i++) {
+        const a0 = (i / CIRCLE_SEGMENTS) * Math.PI * 2;
+        const a1 = ((i + 1) / CIRCLE_SEGMENTS) * Math.PI * 2;
+        const c0 = Math.cos(a0), s0 = Math.sin(a0);
+        const c1 = Math.cos(a1), s1 = Math.sin(a1);
+        const idx = i * 6;
+        circleVerts[idx]     = (rx * c0 + ux * s0) * circleRadius;
+        circleVerts[idx + 1] = (ry * c0 + uy * s0) * circleRadius;
+        circleVerts[idx + 2] = (rz * c0 + uz * s0) * circleRadius;
+        circleVerts[idx + 3] = (rx * c1 + ux * s1) * circleRadius;
+        circleVerts[idx + 4] = (ry * c1 + uy * s1) * circleRadius;
+        circleVerts[idx + 5] = (rz * c1 + uz * s1) * circleRadius;
+      }
+
+      gl.bindVertexArray(gizmoCircleVaoRef.current);
+      gl.bindBuffer(gl.ARRAY_BUFFER, circleBuf);
+      gl.bufferSubData(gl.ARRAY_BUFFER, 0, circleVerts);
+
+      const cColor = activeAxis === "uniform" ? [1, 1, 0.2] : [0.9, 0.9, 0.9];
+      gl.uniform3f(wireShader.uniforms["u_color"]!, cColor[0], cColor[1], cColor[2]);
+      gl.drawArrays(gl.LINES, 0, CIRCLE_SEGMENTS * 2);
+    }
+
+    gl.bindVertexArray(null);
+    gl.enable(gl.DEPTH_TEST);
+  }, []);
+
+  const getGizmoHitInfo = useCallback((
+    screenX: number,
+    screenY: number,
+    canvasW: number,
+    canvasH: number,
+    gizmoCenter: [number, number, number],
+  ): "x" | "y" | "z" | "uniform" | null => {
+    const scene = sceneRef.current;
+    const cam = fallbackCameraRef.current;
+
+    let viewMatrix: Float32Array;
+    let projMatrix: Float32Array;
+    let eyePos: Float32Array;
+
+    if (scene) {
+      const wasmCam = scene.getCamera();
+      wasmCam.aspectRatio = canvasW / canvasH;
+      viewMatrix = wasmCam.getViewMatrix();
+      projMatrix = wasmCam.getProjectionMatrix();
+      eyePos = wasmCam.getEyePosition();
+    } else {
+      cam.aspect = canvasW / canvasH;
+      viewMatrix = cam.getViewMatrix();
+      projMatrix = cam.getProjectionMatrix();
+      eyePos = new Float32Array(cam.getEye());
+    }
+
+    const dx = eyePos[0] - gizmoCenter[0];
+    const dy = eyePos[1] - gizmoCenter[1];
+    const dz = eyePos[2] - gizmoCenter[2];
+    const cameraDist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+    const gizmoScale = cameraDist * 0.15;
+
+    // Helper: project world point to screen coords
+    const projectToScreen = (wx: number, wy: number, wz: number): [number, number] | null => {
+      // Apply view matrix
+      const vx = viewMatrix[0] * wx + viewMatrix[4] * wy + viewMatrix[8] * wz + viewMatrix[12];
+      const vy = viewMatrix[1] * wx + viewMatrix[5] * wy + viewMatrix[9] * wz + viewMatrix[13];
+      const vz = viewMatrix[2] * wx + viewMatrix[6] * wy + viewMatrix[10] * wz + viewMatrix[14];
+      const vw = viewMatrix[3] * wx + viewMatrix[7] * wy + viewMatrix[11] * wz + viewMatrix[15];
+      // Apply projection matrix
+      const cx = projMatrix[0] * vx + projMatrix[4] * vy + projMatrix[8] * vz + projMatrix[12] * vw;
+      const cy = projMatrix[1] * vx + projMatrix[5] * vy + projMatrix[9] * vz + projMatrix[13] * vw;
+      const cw = projMatrix[3] * vx + projMatrix[7] * vy + projMatrix[11] * vz + projMatrix[15] * vw;
+      if (Math.abs(cw) < 0.0001) return null;
+      const ndcX = cx / cw;
+      const ndcY = cy / cw;
+      const sx = (ndcX * 0.5 + 0.5) * canvasW;
+      const sy = (1 - (ndcY * 0.5 + 0.5)) * canvasH; // flip Y
+      return [sx, sy];
+    };
+
+    // Check axis handle endpoints (within 15px)
+    const axes: Array<{ axis: "x" | "y" | "z"; dir: [number, number, number] }> = [
+      { axis: "x", dir: [1, 0, 0] },
+      { axis: "y", dir: [0, 1, 0] },
+      { axis: "z", dir: [0, 0, 1] },
+    ];
+
+    for (const { axis, dir } of axes) {
+      const wp: [number, number, number] = [
+        gizmoCenter[0] + dir[0] * gizmoScale,
+        gizmoCenter[1] + dir[1] * gizmoScale,
+        gizmoCenter[2] + dir[2] * gizmoScale,
+      ];
+      const sp = projectToScreen(wp[0], wp[1], wp[2]);
+      if (sp) {
+        const dist = Math.sqrt((screenX - sp[0]) ** 2 + (screenY - sp[1]) ** 2);
+        if (dist < 15) return axis;
+      }
+    }
+
+    // Check circle: sample points around the circle and find closest
+    const fwdLen = cameraDist || 1;
+    const fwd = [dx / fwdLen, dy / fwdLen, dz / fwdLen];
+    const worldUp = [0, 1, 0];
+    let rx = fwd[1] * worldUp[2] - fwd[2] * worldUp[1];
+    let ry = fwd[2] * worldUp[0] - fwd[0] * worldUp[2];
+    let rz = fwd[0] * worldUp[1] - fwd[1] * worldUp[0];
+    let rl = Math.sqrt(rx * rx + ry * ry + rz * rz);
+    if (rl < 0.001) { rx = 1; ry = 0; rz = 0; rl = 1; }
+    rx /= rl; ry /= rl; rz /= rl;
+    const ux = ry * fwd[2] - rz * fwd[1];
+    const uy = rz * fwd[0] - rx * fwd[2];
+    const uz = rx * fwd[1] - ry * fwd[0];
+    const circleRadius = 0.2 * gizmoScale;
+
+    let minCircleDist = Infinity;
+    for (let i = 0; i < CIRCLE_SEGMENTS; i++) {
+      const a = (i / CIRCLE_SEGMENTS) * Math.PI * 2;
+      const c = Math.cos(a), s = Math.sin(a);
+      const wp = [
+        gizmoCenter[0] + (rx * c + ux * s) * circleRadius,
+        gizmoCenter[1] + (ry * c + uy * s) * circleRadius,
+        gizmoCenter[2] + (rz * c + uz * s) * circleRadius,
+      ];
+      const sp = projectToScreen(wp[0], wp[1], wp[2]);
+      if (sp) {
+        const dist = Math.sqrt((screenX - sp[0]) ** 2 + (screenY - sp[1]) ** 2);
+        if (dist < minCircleDist) minCircleDist = dist;
+      }
+    }
+    if (minCircleDist < 12) return "uniform";
+
+    return null;
+  }, [sceneRef]);
+
   const initGrid = useCallback((gl: WebGL2RenderingContext) => {
     const vao = gl.createVertexArray()!;
     gl.bindVertexArray(vao);
@@ -383,7 +665,8 @@ export function useViewport(
     gl.clearColor(0.18, 0.18, 0.18, 1.0);
 
     initGrid(gl);
-  }, [canvasRef, createProgram, initGrid]);
+    initGizmo(gl);
+  }, [canvasRef, createProgram, initGrid, initGizmo]);
 
   const markDirty = useCallback(() => {
     needsUploadRef.current = true;
@@ -513,8 +796,17 @@ export function useViewport(
       }
     }
 
+    // Draw scale gizmo when scale tool is active
+    const { activeTool } = useSceneStore.getState();
+    if (activeTool === "scale" && wireShader && gizmoVaoRef.current) {
+      const center = getGizmoCenter(scene);
+      if (center) {
+        renderGizmo(gl, wireShader, viewMatrix, projMatrix, eyePos, center, scaleAxisRef.current);
+      }
+    }
+
     gl.bindVertexArray(null);
-  }, [canvasRef, sceneRef, uploadObjectData, setMeshStats]);
+  }, [canvasRef, sceneRef, uploadObjectData, setMeshStats, getGizmoCenter, renderGizmo]);
 
   // Camera controls (work with both WASM and fallback)
   const handleOrbit = useCallback(
@@ -588,5 +880,7 @@ export function useViewport(
     startRenderLoop,
     stopRenderLoop,
     fallbackCamera: fallbackCameraRef,
+    getGizmoHitInfo,
+    scaleAxisRef,
   };
 }

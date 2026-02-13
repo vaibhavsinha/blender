@@ -226,7 +226,7 @@ describe("useMeshOperations", () => {
     const { result } = renderMeshOps();
     act(() => { result.current.startScale(); });
     act(() => {
-      result.current.scaleCumulativeRef.current = 2;
+      result.current.scaleCumulativeRef.current = { sx: 2, sy: 2, sz: 2 };
     });
     act(() => { result.current.endScale(true); });
     const scaleCalls = (mesh.scaleSelected as Mock).mock.calls;
@@ -234,6 +234,21 @@ describe("useMeshOperations", () => {
     expect(lastCall[0]).toBeCloseTo(0.5);
     expect(lastCall[1]).toBeCloseTo(0.5);
     expect(lastCall[2]).toBeCloseTo(0.5);
+  });
+
+  it("endScale(true) applies per-axis inverse factor", () => {
+    mesh.selectFace(0);
+    const { result } = renderMeshOps();
+    act(() => { result.current.startScale(); });
+    act(() => {
+      result.current.scaleCumulativeRef.current = { sx: 3, sy: 1, sz: 1 };
+    });
+    act(() => { result.current.endScale(true); });
+    const scaleCalls = (mesh.scaleSelected as Mock).mock.calls;
+    const lastCall = scaleCalls[scaleCalls.length - 1];
+    expect(lastCall[0]).toBeCloseTo(1 / 3);
+    expect(lastCall[1]).toBeCloseTo(1);
+    expect(lastCall[2]).toBeCloseTo(1);
   });
 
   // --- Null safety ---
