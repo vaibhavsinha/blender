@@ -17,6 +17,7 @@ export interface EditMesh {
   selectAll(): void;
   deselectAll(): void;
   toggleSelectAll(): void;
+  invertSelection(): void;
   isFaceSelected(index: number): boolean;
   selectedFaceCount(): number;
   translateSelected(dx: number, dy: number, dz: number): void;
@@ -25,6 +26,8 @@ export interface EditMesh {
   extrudeSelectedFaces(distance: number): void;
   subdivideSelectedFaces(): void;
   deleteSelectedFaces(): void;
+  setShadeSmooth(smooth: boolean): void;
+  getShadeSmooth(): boolean;
   recalcNormals(): void;
   buildRenderData(): RenderData;
   delete(): void;
@@ -54,6 +57,8 @@ export interface SceneObject {
   getLocation(): Float32Array;
   setLocation(x: number, y: number, z: number): void;
   updateTransform(): void;
+  getName(): string;
+  setName(name: string): void;
   selected: boolean;
   delete(): void;
 }
@@ -65,6 +70,8 @@ export interface Scene {
   getActiveObject(): SceneObject | null;
   getCamera(): Camera;
   objectCount(): number;
+  duplicateActiveObject(): number;
+  removeObject(index: number): void;
   activeObjectIndex: number;
   delete(): void;
 }

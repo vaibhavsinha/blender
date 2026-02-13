@@ -5,6 +5,7 @@
 
 #include <cstring>
 #include <memory>
+#include <string>
 #include <vector>
 
 #include "mesh.h"
@@ -120,13 +121,14 @@ struct Camera {
 
 struct SceneObject {
   std::unique_ptr<EditMesh> mesh;
+  std::string name;
   float location[3];
   float rotation[4]; /* quaternion (w, x, y, z) */
   float scale[3];
   float transform[4][4];
   bool selected;
 
-  SceneObject()
+  SceneObject() : name("Object")
   {
     zero_v3(location);
     rotation[0] = 1.0f;
@@ -205,6 +207,56 @@ class Scene {
   }
 
   int object_count() const { return (int)objects.size(); }
+
+  int duplicate_active_object()
+  {
+    SceneObject *src = get_active_object();
+    if (!src || !src->mesh) {
+      return -1;
+    }
+
+    SceneObject obj;
+    obj.name = src->name + ".001";
+
+    /* Deep copy the mesh */
+    obj.mesh = std::make_unique<EditMesh>();
+    obj.mesh->smooth_shading = src->mesh->smooth_shading;
+    obj.mesh->vertices.reserve(src->mesh->vertices.size());
+    for (const auto &v : src->mesh->vertices) {
+      obj.mesh->vertices.push_back(v);
+    }
+    obj.mesh->faces.reserve(src->mesh->faces.size());
+    for (const auto &f : src->mesh->faces) {
+      obj.mesh->faces.push_back(f);
+    }
+
+    /* Copy transform */
+    copy_v3_v3(obj.location, src->location);
+    copy_qt_qt(obj.rotation, src->rotation);
+    copy_v3_v3(obj.scale, src->scale);
+
+    /* Offset on X */
+    obj.location[0] += 2.0f;
+    obj.update_transform();
+
+    objects.push_back(std::move(obj));
+    active_object_index = (int)objects.size() - 1;
+    return active_object_index;
+  }
+
+  void remove_object(int index)
+  {
+    if (index < 0 || index >= (int)objects.size()) {
+      return;
+    }
+    objects.erase(objects.begin() + index);
+    if (objects.empty()) {
+      active_object_index = -1;
+    }
+    else if (active_object_index >= (int)objects.size()) {
+      active_object_index = (int)objects.size() - 1;
+    }
+  }
 
   Camera *get_camera() { return &camera; }
 };

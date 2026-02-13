@@ -272,4 +272,57 @@ describe("useMeshOperations", () => {
     act(() => { started = result.current.startGrab(); });
     expect(started).toBe(false);
   });
+
+  // --- Shade smooth/flat ---
+
+  it("setShadeSmooth(true) calls mesh.setShadeSmooth", () => {
+    const { result } = renderMeshOps();
+    act(() => result.current.setShadeSmooth(true));
+    expect(mesh.setShadeSmooth).toHaveBeenCalledWith(true);
+    expect(markDirty).toHaveBeenCalled();
+    expect(useSceneStore.getState().statusMessage).toBe("Shade Smooth");
+  });
+
+  it("setShadeSmooth(false) calls mesh.setShadeSmooth", () => {
+    const { result } = renderMeshOps();
+    act(() => result.current.setShadeSmooth(false));
+    expect(mesh.setShadeSmooth).toHaveBeenCalledWith(false);
+    expect(markDirty).toHaveBeenCalled();
+    expect(useSceneStore.getState().statusMessage).toBe("Shade Flat");
+  });
+
+  // --- Invert selection ---
+
+  it("invertSelection toggles selection", () => {
+    mesh.selectFace(0);
+    mesh.selectFace(2);
+    const { result } = renderMeshOps();
+    act(() => result.current.invertSelection());
+    expect(mesh.invertSelection).toHaveBeenCalled();
+    expect(markDirty).toHaveBeenCalled();
+  });
+
+  // --- Mirror ---
+
+  it("mirrorSelected('x') calls scaleSelected(-1, 1, 1)", () => {
+    mesh.selectFace(0);
+    const { result } = renderMeshOps();
+    act(() => result.current.mirrorSelected("x"));
+    expect(mesh.scaleSelected).toHaveBeenCalledWith(-1, 1, 1);
+    expect(markDirty).toHaveBeenCalled();
+  });
+
+  it("mirrorSelected('y') calls scaleSelected(1, -1, 1)", () => {
+    mesh.selectFace(0);
+    const { result } = renderMeshOps();
+    act(() => result.current.mirrorSelected("y"));
+    expect(mesh.scaleSelected).toHaveBeenCalledWith(1, -1, 1);
+  });
+
+  it("mirrorSelected('z') calls scaleSelected(1, 1, -1)", () => {
+    mesh.selectFace(0);
+    const { result } = renderMeshOps();
+    act(() => result.current.mirrorSelected("z"));
+    expect(mesh.scaleSelected).toHaveBeenCalledWith(1, 1, -1);
+  });
 });

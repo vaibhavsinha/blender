@@ -228,4 +228,62 @@ describe("ViewportCanvas", () => {
     const canvases = container.querySelectorAll("canvas");
     expect(canvases.length).toBe(3);
   });
+
+  // --- Context menu ---
+
+  it("right-click opens context menu at cursor position", () => {
+    renderCanvas();
+    const canvas = document.querySelector("canvas")!;
+    fireEvent.contextMenu(canvas, { clientX: 200, clientY: 300 });
+    const menu = document.querySelector("[role='menu']");
+    expect(menu).toBeTruthy();
+  });
+
+  it("context menu shows edit mode items when in edit mode", () => {
+    act(() => useSceneStore.setState({ mode: "edit" }));
+    renderCanvas();
+    const canvas = document.querySelector("canvas")!;
+    fireEvent.contextMenu(canvas, { clientX: 200, clientY: 300 });
+    const menuItems = document.querySelectorAll("[role='menuitem']");
+    const labels = Array.from(menuItems).map((el) => el.textContent?.trim());
+    expect(labels.some((l) => l?.includes("Extrude Faces"))).toBe(true);
+    expect(labels.some((l) => l?.includes("Delete Faces"))).toBe(true);
+    expect(labels.some((l) => l?.includes("Invert Selection"))).toBe(true);
+  });
+
+  it("context menu shows object mode items when in object mode", () => {
+    act(() => useSceneStore.setState({ mode: "object" }));
+    renderCanvas();
+    const canvas = document.querySelector("canvas")!;
+    fireEvent.contextMenu(canvas, { clientX: 200, clientY: 300 });
+    const menuItems = document.querySelectorAll("[role='menuitem']");
+    const labels = Array.from(menuItems).map((el) => el.textContent?.trim());
+    expect(labels.some((l) => l?.includes("Duplicate Objects"))).toBe(true);
+    expect(labels.some((l) => l?.includes("Rename Active Object"))).toBe(true);
+    expect(labels.some((l) => l?.includes("Delete"))).toBe(true);
+  });
+
+  it("context menu action triggers operation and closes menu", () => {
+    mesh.selectFace(0);
+    renderCanvas();
+    const canvas = document.querySelector("canvas")!;
+    fireEvent.contextMenu(canvas, { clientX: 200, clientY: 300 });
+    const menuItems = document.querySelectorAll("[role='menuitem']");
+    const extrudeItem = Array.from(menuItems).find((el) =>
+      el.textContent?.includes("Extrude Faces"),
+    );
+    expect(extrudeItem).toBeTruthy();
+    fireEvent.click(extrudeItem!);
+    expect(mesh.extrudeSelectedFaces).toHaveBeenCalled();
+    // Menu should be closed
+    const menu = document.querySelector("[role='menu']");
+    expect(menu).toBeNull();
+  });
+
+  it("F2 opens rename input when active object exists", () => {
+    renderCanvas();
+    fireEvent.keyDown(window, { key: "F2" });
+    const input = document.querySelector("[data-testid='rename-input']");
+    expect(input).toBeTruthy();
+  });
 });

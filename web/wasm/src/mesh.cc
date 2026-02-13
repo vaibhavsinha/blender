@@ -165,6 +165,13 @@ void EditMesh::toggle_select_all()
   }
 }
 
+void EditMesh::invert_selection()
+{
+  for (auto &f : faces) {
+    f.flags ^= MESH_FLAG_SELECT;
+  }
+}
+
 bool EditMesh::is_face_selected(int index) const
 {
   if (index >= 0 && index < (int)faces.size()) {
@@ -513,6 +520,23 @@ void EditMesh::delete_selected_faces()
 /** \} */
 
 /* -------------------------------------------------------------------- */
+/** \name Shading
+ * \{ */
+
+void EditMesh::set_shade_smooth(bool smooth)
+{
+  smooth_shading = smooth;
+  recalc_normals();
+}
+
+bool EditMesh::get_shade_smooth() const
+{
+  return smooth_shading;
+}
+
+/** \} */
+
+/* -------------------------------------------------------------------- */
 /** \name Normals
  * \{ */
 
@@ -559,15 +583,22 @@ RenderData EditMesh::build_render_data() const
     float g = selected ? 0.55f : 0.5f;
     float b = selected ? 0.0f : 0.5f;
 
-    /* Add face vertices with face normal */
+    /* Add face vertices with face normal (flat) or vertex normal (smooth) */
     for (int i = 0; i < f.vert_count; i++) {
       const Vertex &v = vertices[f.indices[i]];
       rd.positions.push_back(v.position[0]);
       rd.positions.push_back(v.position[1]);
       rd.positions.push_back(v.position[2]);
-      rd.normals.push_back(f.normal[0]);
-      rd.normals.push_back(f.normal[1]);
-      rd.normals.push_back(f.normal[2]);
+      if (smooth_shading) {
+        rd.normals.push_back(v.normal[0]);
+        rd.normals.push_back(v.normal[1]);
+        rd.normals.push_back(v.normal[2]);
+      }
+      else {
+        rd.normals.push_back(f.normal[0]);
+        rd.normals.push_back(f.normal[1]);
+        rd.normals.push_back(f.normal[2]);
+      }
       rd.colors.push_back(r);
       rd.colors.push_back(g);
       rd.colors.push_back(b);

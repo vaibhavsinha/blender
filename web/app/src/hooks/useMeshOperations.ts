@@ -136,6 +136,51 @@ export function useMeshOperations(
     [sceneRef, markDirty],
   );
 
+  const setShadeSmooth = useCallback(
+    (smooth: boolean) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const obj = scene.getActiveObject();
+      if (!obj) return;
+      obj.getMesh().setShadeSmooth(smooth);
+      markDirty();
+      setStatusMessage(smooth ? "Shade Smooth" : "Shade Flat");
+    },
+    [sceneRef, markDirty, setStatusMessage],
+  );
+
+  const invertSelection = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().invertSelection();
+    markDirty();
+    updateStats();
+    setStatusMessage("Selection inverted");
+  }, [sceneRef, markDirty, updateStats, setStatusMessage]);
+
+  const mirrorSelected = useCallback(
+    (axis: "x" | "y" | "z") => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const obj = scene.getActiveObject();
+      if (!obj) return;
+      const mesh = obj.getMesh();
+      if (mesh.selectedFaceCount() === 0) {
+        setStatusMessage("No faces selected for mirror");
+        return;
+      }
+      const sx = axis === "x" ? -1 : 1;
+      const sy = axis === "y" ? -1 : 1;
+      const sz = axis === "z" ? -1 : 1;
+      mesh.scaleSelected(sx, sy, sz);
+      markDirty();
+      setStatusMessage(`Mirrored on ${axis.toUpperCase()} axis`);
+    },
+    [sceneRef, markDirty, setStatusMessage],
+  );
+
   /* ── Grab modal ── */
 
   const startGrab = useCallback((): boolean => {
@@ -238,6 +283,9 @@ export function useMeshOperations(
     translateSelected,
     rotateSelected,
     scaleSelected,
+    setShadeSmooth,
+    invertSelection,
+    mirrorSelected,
     startGrab,
     endGrab,
     grabActiveRef,

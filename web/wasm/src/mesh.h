@@ -13,6 +13,7 @@ enum MeshFlags : uint32_t {
   MESH_FLAG_NONE = 0,
   MESH_FLAG_SELECT = (1 << 0),
   MESH_FLAG_HIDDEN = (1 << 1),
+  MESH_FLAG_SMOOTH = (1 << 2),
 };
 
 struct Vertex {
@@ -44,8 +45,9 @@ class EditMesh {
  public:
   std::vector<Vertex> vertices;
   std::vector<Face> faces;
+  bool smooth_shading;
 
-  EditMesh() = default;
+  EditMesh() : smooth_shading(false) {}
 
   /* Primitives */
   static EditMesh create_cube(float size);
@@ -57,6 +59,7 @@ class EditMesh {
   void select_all();
   void deselect_all();
   void toggle_select_all();
+  void invert_selection();
   bool is_face_selected(int index) const;
   int selected_face_count() const;
 
@@ -69,6 +72,10 @@ class EditMesh {
   void extrude_selected_faces(float distance);
   void subdivide_selected_faces();
   void delete_selected_faces();
+
+  /* Shading */
+  void set_shade_smooth(bool smooth);
+  bool get_shade_smooth() const;
 
   /* Normals */
   void recalc_normals();

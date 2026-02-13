@@ -11,6 +11,7 @@ export interface MockEditMeshInternals {
   __deleteCount: number;
   __vertCount: number;
   __faceCount: number;
+  __smoothShading: boolean;
 }
 
 export type MockEditMesh = EditMesh & MockEditMeshInternals;
@@ -26,6 +27,8 @@ export function createMockEditMesh(vertCount = 8, faceCount = 6): MockEditMesh {
   let currentVertCount = vertCount;
   let currentFaceCount = faceCount;
 
+  let smoothShading = false;
+
   const mesh: MockEditMesh = {
     __selected: selected,
     __translations: translations,
@@ -36,6 +39,7 @@ export function createMockEditMesh(vertCount = 8, faceCount = 6): MockEditMesh {
     __deleteCount: 0,
     __vertCount: vertCount,
     __faceCount: faceCount,
+    __smoothShading: false,
     vertexCount: vi.fn(() => currentVertCount),
     faceCount: vi.fn(() => currentFaceCount),
     selectFace: vi.fn((index: number) => {
@@ -55,6 +59,15 @@ export function createMockEditMesh(vertCount = 8, faceCount = 6): MockEditMesh {
         selected.clear();
       } else {
         for (let i = 0; i < currentFaceCount; i++) selected.add(i);
+      }
+    }),
+    invertSelection: vi.fn(() => {
+      for (let i = 0; i < currentFaceCount; i++) {
+        if (selected.has(i)) {
+          selected.delete(i);
+        } else {
+          selected.add(i);
+        }
       }
     }),
     isFaceSelected: vi.fn((index: number) => selected.has(index)),
@@ -91,6 +104,11 @@ export function createMockEditMesh(vertCount = 8, faceCount = 6): MockEditMesh {
       mesh.__faceCount = currentFaceCount;
       selected.clear();
     }),
+    setShadeSmooth: vi.fn((smooth: boolean) => {
+      smoothShading = smooth;
+      mesh.__smoothShading = smooth;
+    }),
+    getShadeSmooth: vi.fn(() => smoothShading),
     recalcNormals: vi.fn(),
     buildRenderData: vi.fn(() => ({
       positions: new Float32Array(currentVertCount * 3),
@@ -147,6 +165,7 @@ export function createMockCamera(): Camera {
 
 export function createMockSceneObject(mesh?: MockEditMesh): SceneObject {
   const editMesh = mesh ?? createMockEditMesh();
+  let objName = "Object";
   return {
     getMesh: vi.fn(() => editMesh),
     getTransformMatrix: vi.fn(() => Float32Array.from([1,0,0,0,0,1,0,0,0,0,1,0,0,0,0,1])),
@@ -154,6 +173,8 @@ export function createMockSceneObject(mesh?: MockEditMesh): SceneObject {
     getLocation: vi.fn(() => new Float32Array([0, 0, 0])),
     setLocation: vi.fn(),
     updateTransform: vi.fn(),
+    getName: vi.fn(() => objName),
+    setName: vi.fn((name: string) => { objName = name; }),
     selected: false,
     delete: vi.fn(),
   };
@@ -188,6 +209,23 @@ export function createMockScene(initialMesh?: MockEditMesh): Scene & { __objects
     getActiveObject: vi.fn(() => (activeIdx >= 0 ? objects[activeIdx] : null)),
     getCamera: vi.fn(() => camera),
     objectCount: vi.fn(() => objects.length),
+    duplicateActiveObject: vi.fn(() => {
+      if (activeIdx < 0) return -1;
+      const newObj = createMockSceneObject(createMockEditMesh(8, 6));
+      objects.push(newObj);
+      activeIdx = objects.length - 1;
+      return activeIdx;
+    }),
+    removeObject: vi.fn((index: number) => {
+      if (index >= 0 && index < objects.length) {
+        objects.splice(index, 1);
+        if (objects.length === 0) {
+          activeIdx = -1;
+        } else if (activeIdx >= objects.length) {
+          activeIdx = objects.length - 1;
+        }
+      }
+    }),
     get activeObjectIndex() { return activeIdx; },
     set activeObjectIndex(v: number) { activeIdx = v; },
     delete: vi.fn(),

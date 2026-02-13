@@ -1,4 +1,4 @@
-import { useRef, useEffect, useCallback, useState } from "react";
+import { useRef, useEffect, useCallback, useState, useMemo } from "react";
 import type { Scene } from "../types/wasm";
 import type { Tool } from "../store/sceneStore";
 import { useViewport } from "../hooks/useViewport";
@@ -6,6 +6,7 @@ import { useMeshOperations } from "../hooks/useMeshOperations";
 import { useSceneStore } from "../store/sceneStore";
 import { AnnotationOverlay } from "./AnnotationOverlay";
 import { MeasureOverlay } from "./MeasureOverlay";
+import { ContextMenu, type MenuItem } from "./ContextMenu";
 
 const TOOL_CURSORS: Record<Tool, string> = {
   select: "default",
@@ -28,6 +29,8 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
   const { mode, activeTool, setActiveTool, setStatusMessage } = useSceneStore();
 
   const [overlaySize, setOverlaySize] = useState({ width: 0, height: 0 });
+  const [contextMenu, setContextMenu] = useState<{ x: number; y: number } | null>(null);
+  const [renameInput, setRenameInput] = useState<{ x: number; y: number; value: string } | null>(null);
 
   // Track mouse state
   const isDraggingRef = useRef(false);
@@ -97,6 +100,48 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
     return () => viewport.stopRenderLoop();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [viewport.init, viewport.startRenderLoop, viewport.stopRenderLoop]);
+
+  // Scene-level operations
+  const duplicateObject = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    scene.duplicateActiveObject();
+    viewport.markDirty();
+    setStatusMessage("Object duplicated");
+  }, [sceneRef, viewport, setStatusMessage]);
+
+  const removeObject = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const idx = scene.activeObjectIndex;
+    if (idx < 0) return;
+    scene.removeObject(idx);
+    viewport.markDirty();
+    setStatusMessage("Object deleted");
+  }, [sceneRef, viewport, setStatusMessage]);
+
+  const renameObject = useCallback(
+    (name: string) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const obj = scene.getActiveObject();
+      if (!obj) return;
+      obj.setName(name);
+      setStatusMessage(`Renamed to "${name}"`);
+    },
+    [sceneRef, setStatusMessage],
+  );
+
+  const startRename = useCallback(
+    (x: number, y: number) => {
+      const scene = sceneRef.current;
+      if (!scene) return;
+      const obj = scene.getActiveObject();
+      if (!obj) return;
+      setRenameInput({ x, y, value: obj.getName() });
+    },
+    [sceneRef],
+  );
 
   // Handle mouse down
   const handleMouseDown = useCallback(
@@ -226,7 +271,76 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
 
   const handleContextMenu = useCallback((e: React.MouseEvent) => {
     e.preventDefault();
+    setContextMenu({ x: e.clientX, y: e.clientY });
   }, []);
+
+  const closeContextMenu = useCallback(() => {
+    setContextMenu(null);
+  }, []);
+
+  // Build context menu items based on mode
+  const contextMenuItems: MenuItem[] = useMemo(() => {
+    const mirrorSubmenu: MenuItem = {
+      type: "submenu",
+      label: "Mirror",
+      children: [
+        { type: "action", label: "X", onClick: () => meshOps.mirrorSelected("x") },
+        { type: "action", label: "Y", onClick: () => meshOps.mirrorSelected("y") },
+        { type: "action", label: "Z", onClick: () => meshOps.mirrorSelected("z") },
+      ],
+    };
+
+    if (mode === "object") {
+      return [
+        { type: "action", label: "Shade Smooth", onClick: () => meshOps.setShadeSmooth(true) },
+        { type: "action", label: "Shade Flat", onClick: () => meshOps.setShadeSmooth(false) },
+        { type: "separator" },
+        { type: "action", label: "Duplicate Objects", shortcut: "Shift+D", onClick: duplicateObject },
+        {
+          type: "action",
+          label: "Rename Active Object...",
+          shortcut: "F2",
+          onClick: () => {
+            if (contextMenu) startRename(contextMenu.x, contextMenu.y);
+          },
+        },
+        { type: "separator" },
+        mirrorSubmenu,
+        { type: "separator" },
+        { type: "action", label: "Delete", shortcut: "X", onClick: removeObject },
+      ];
+    }
+
+    // Edit mode
+    return [
+      { type: "action", label: "Extrude Faces", shortcut: "E", onClick: () => meshOps.extrudeSelected(0.5) },
+      { type: "action", label: "Subdivide", shortcut: "W", onClick: () => meshOps.subdivideSelected() },
+      { type: "separator" },
+      { type: "action", label: "Select All", shortcut: "A", onClick: () => meshOps.toggleSelectAll() },
+      {
+        type: "action",
+        label: "Deselect All",
+        onClick: () => {
+          const scene = sceneRef.current;
+          if (scene) {
+            const obj = scene.getActiveObject();
+            if (obj) {
+              obj.getMesh().deselectAll();
+              viewport.markDirty();
+            }
+          }
+        },
+      },
+      { type: "action", label: "Invert Selection", onClick: () => meshOps.invertSelection() },
+      { type: "separator" },
+      { type: "action", label: "Shade Smooth", onClick: () => meshOps.setShadeSmooth(true) },
+      { type: "action", label: "Shade Flat", onClick: () => meshOps.setShadeSmooth(false) },
+      { type: "separator" },
+      mirrorSubmenu,
+      { type: "separator" },
+      { type: "action", label: "Delete Faces", shortcut: "X", onClick: () => meshOps.deleteSelected() },
+    ];
+  }, [mode, meshOps, duplicateObject, removeObject, startRename, contextMenu, sceneRef, viewport]);
 
   // Use native wheel listener with { passive: false } to allow preventDefault
   useEffect(() => {
@@ -251,6 +365,26 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
         return;
       }
 
+      // Close context menu on any key
+      if (contextMenu) {
+        setContextMenu(null);
+      }
+
+      switch (e.key) {
+        case "F2":
+          e.preventDefault();
+          startRename(window.innerWidth / 2, window.innerHeight / 2);
+          return;
+        case "D":
+        case "d":
+          if (e.shiftKey && mode === "object") {
+            e.preventDefault();
+            duplicateObject();
+            return;
+          }
+          break;
+      }
+
       switch (e.key.toLowerCase()) {
         case "a":
           meshOps.toggleSelectAll();
@@ -263,7 +397,11 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
           break;
         case "x":
         case "delete":
-          meshOps.deleteSelected();
+          if (mode === "object") {
+            removeObject();
+          } else {
+            meshOps.deleteSelected();
+          }
           break;
         case "g":
           if (
@@ -320,7 +458,7 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [activeTool, meshOps, setActiveTool, setStatusMessage, updateCursor]);
+  }, [activeTool, mode, meshOps, setActiveTool, setStatusMessage, updateCursor, contextMenu, duplicateObject, removeObject, startRename]);
 
   return (
     <div
@@ -354,6 +492,46 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
         width={overlaySize.width}
         height={overlaySize.height}
       />
+      {contextMenu && (
+        <ContextMenu
+          x={contextMenu.x}
+          y={contextMenu.y}
+          items={contextMenuItems}
+          onClose={closeContextMenu}
+        />
+      )}
+      {renameInput && (
+        <input
+          data-testid="rename-input"
+          autoFocus
+          defaultValue={renameInput.value}
+          style={{
+            position: "fixed",
+            left: renameInput.x,
+            top: renameInput.y,
+            zIndex: 10001,
+            background: "#303030",
+            color: "#d0d0d0",
+            border: "1px solid #4b6eaf",
+            borderRadius: 3,
+            padding: "4px 8px",
+            fontSize: 13,
+            fontFamily: "system-ui, -apple-system, sans-serif",
+            outline: "none",
+            minWidth: 150,
+          }}
+          onFocus={(e) => e.target.select()}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              renameObject((e.target as HTMLInputElement).value);
+              setRenameInput(null);
+            } else if (e.key === "Escape") {
+              setRenameInput(null);
+            }
+          }}
+          onBlur={() => setRenameInput(null)}
+        />
+      )}
     </div>
   );
 }

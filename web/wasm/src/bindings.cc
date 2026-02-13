@@ -68,6 +68,16 @@ static val camera_get_eye_position(Camera &cam)
 }
 
 /* SceneObject helpers */
+static std::string object_get_name(SceneObject &obj)
+{
+  return obj.name;
+}
+
+static void object_set_name(SceneObject &obj, const std::string &name)
+{
+  obj.name = name;
+}
+
 static val object_get_transform_matrix(SceneObject &obj)
 {
   return matrix_to_float32(obj.transform);
@@ -119,6 +129,7 @@ EMSCRIPTEN_BINDINGS(blender_web)
       .function("selectAll", &EditMesh::select_all)
       .function("deselectAll", &EditMesh::deselect_all)
       .function("toggleSelectAll", &EditMesh::toggle_select_all)
+      .function("invertSelection", &EditMesh::invert_selection)
       .function("isFaceSelected", &EditMesh::is_face_selected)
       .function("selectedFaceCount", &EditMesh::selected_face_count)
       .function("translateSelected", &EditMesh::translate_selected)
@@ -127,6 +138,8 @@ EMSCRIPTEN_BINDINGS(blender_web)
       .function("extrudeSelectedFaces", &EditMesh::extrude_selected_faces)
       .function("subdivideSelectedFaces", &EditMesh::subdivide_selected_faces)
       .function("deleteSelectedFaces", &EditMesh::delete_selected_faces)
+      .function("setShadeSmooth", &EditMesh::set_shade_smooth)
+      .function("getShadeSmooth", &EditMesh::get_shade_smooth)
       .function("recalcNormals", &EditMesh::recalc_normals)
       .function("buildRenderData", &mesh_build_render_data);
 
@@ -156,6 +169,8 @@ EMSCRIPTEN_BINDINGS(blender_web)
       .function("getLocation", &object_get_location)
       .function("setLocation", &object_set_location)
       .function("updateTransform", &SceneObject::update_transform)
+      .function("getName", &object_get_name)
+      .function("setName", &object_set_name)
       .property("selected", &SceneObject::selected);
 
   /* Scene */
@@ -167,5 +182,7 @@ EMSCRIPTEN_BINDINGS(blender_web)
       .function("getActiveObject", &Scene::get_active_object, allow_raw_pointers())
       .function("getCamera", &Scene::get_camera, allow_raw_pointers())
       .function("objectCount", &Scene::object_count)
+      .function("duplicateActiveObject", &Scene::duplicate_active_object)
+      .function("removeObject", &Scene::remove_object)
       .property("activeObjectIndex", &Scene::active_object_index);
 }
