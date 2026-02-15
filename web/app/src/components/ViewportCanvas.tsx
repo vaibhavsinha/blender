@@ -190,6 +190,7 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
       }
 
       // When scale tool active and no modal running, check for gizmo handle click
+      // If no specific axis handle is hit, default to uniform scaling
       if (activeTool === "scale" && e.button === 0) {
         const canvas = canvasRef.current;
         if (canvas) {
@@ -197,8 +198,8 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
           const hitAxis = viewport.getGizmoHitInfo(
             e.clientX - rect.left, e.clientY - rect.top,
             rect.width, rect.height, getGizmoCenter(),
-          );
-          if (hitAxis && meshOps.startScale()) {
+          ) ?? "uniform";
+          if (meshOps.startScale()) {
             scaleAxisRef.current = hitAxis;
             viewport.scaleAxisRef.current = hitAxis;
             updateCursor();
