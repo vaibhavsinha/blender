@@ -6,6 +6,8 @@ import { PropertiesPanel } from "./components/PropertiesPanel";
 import { StatusBar } from "./components/StatusBar";
 import { useBlenderWasm } from "./hooks/useBlenderWasm";
 import { useSceneStore } from "./store/sceneStore";
+import { export3mf } from "./utils/export3mf";
+import { extractSceneMeshes, extractFallbackCubeMesh } from "./utils/extractSceneMeshes";
 
 export default function App() {
   const { scene: sceneRef } = useBlenderWasm();
@@ -72,6 +74,23 @@ export default function App() {
     setStatusMessage(`Added cube (Object ${idx})`);
   }, [sceneRef, setObjectCount, setActiveObjectIndex, setStatusMessage]);
 
+  const handleExport3mf = useCallback(async () => {
+    setStatusMessage("Exporting 3MF...");
+    try {
+      const scene = sceneRef.current;
+      const meshes =
+        scene && scene.objectCount() > 0
+          ? extractSceneMeshes(scene)
+          : extractFallbackCubeMesh();
+      await export3mf(meshes, "blender-web-lite.3mf");
+      setStatusMessage(`Exported ${meshes.length} object(s) as 3MF`);
+    } catch (err) {
+      setStatusMessage(
+        `Export failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+      );
+    }
+  }, [sceneRef, setStatusMessage]);
+
   return (
     <div
       style={{
@@ -81,7 +100,7 @@ export default function App() {
         height: "100%",
       }}
     >
-      <HeaderBar />
+      <HeaderBar onExport3mf={handleExport3mf} />
       <div style={{ display: "flex", flex: 1, overflow: "hidden" }}>
         <Toolbar
           onExtrude={handleExtrude}
