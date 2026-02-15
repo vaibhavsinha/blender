@@ -170,18 +170,22 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
       mouseDownPosRef.current = { x: e.clientX, y: e.clientY };
       dragDistanceRef.current = 0;
 
-      // If in a modal mode, click to confirm
+      // If in a modal mode, click to confirm.
+      // Clear isDragging so the confirmation click doesn't leak into orbit.
       if (meshOps.grabActiveRef.current) {
+        isDraggingRef.current = false;
         meshOps.endGrab(false);
         updateCursor();
         return;
       }
       if (meshOps.rotateActiveRef.current) {
+        isDraggingRef.current = false;
         meshOps.endRotate(false);
         updateCursor();
         return;
       }
       if (meshOps.scaleActiveRef.current) {
+        isDraggingRef.current = false;
         meshOps.endScale(false);
         scaleAxisRef.current = null;
         viewport.scaleAxisRef.current = null;
