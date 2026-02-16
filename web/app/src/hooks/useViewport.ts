@@ -553,67 +553,52 @@ export function useViewport(
       return [sx, sy];
     };
 
-    // Check axis handle squares — project all 4 corners to screen, compute
-    // screen-space bounding box, and test if click is inside (with padding).
-    // Pick the closest axis if multiple overlap.
-    const h = GIZMO_HANDLE_HALF;
-    const axes: Array<{
-      axis: "x" | "y" | "z";
-      corners: [number, number, number][];
-    }> = [
-      { axis: "x", corners: [
-        [1, -h, -h], [1, h, -h], [1, h, h], [1, -h, h],
-      ]},
-      { axis: "y", corners: [
-        [-h, 1, -h], [h, 1, -h], [h, 1, h], [-h, 1, h],
-      ]},
-      { axis: "z", corners: [
-        [-h, -h, 1], [h, -h, 1], [h, h, 1], [-h, h, 1],
-      ]},
+    // Check axis lines — project center and tip, test distance to line segment.
+    // Pick the closest axis within threshold.
+    const AXIS_HIT_PX = 14;
+    const axes: Array<{ axis: "x" | "y" | "z"; dir: [number, number, number] }> = [
+      { axis: "x", dir: [1, 0, 0] },
+      { axis: "y", dir: [0, 1, 0] },
+      { axis: "z", dir: [0, 0, 1] },
     ];
 
-    const HANDLE_PAD = 8; // extra screen pixels around the projected square
+    const centerSp = projectToScreen(gizmoCenter[0], gizmoCenter[1], gizmoCenter[2]);
     let bestAxis: "x" | "y" | "z" | null = null;
     let bestDist = Infinity;
 
-    for (const { axis, corners } of axes) {
-      let minSx = Infinity, maxSx = -Infinity;
-      let minSy = Infinity, maxSy = -Infinity;
-      let projected = 0;
-      let centerSx = 0, centerSy = 0;
-      for (const [lx, ly, lz] of corners) {
-        const wp: [number, number, number] = [
-          gizmoCenter[0] + lx * gizmoScale,
-          gizmoCenter[1] + ly * gizmoScale,
-          gizmoCenter[2] + lz * gizmoScale,
-        ];
-        const sp = projectToScreen(wp[0], wp[1], wp[2]);
-        if (sp) {
-          minSx = Math.min(minSx, sp[0]);
-          maxSx = Math.max(maxSx, sp[0]);
-          minSy = Math.min(minSy, sp[1]);
-          maxSy = Math.max(maxSy, sp[1]);
-          centerSx += sp[0];
-          centerSy += sp[1];
-          projected++;
+    for (const { axis, dir } of axes) {
+      const tipWorld: [number, number, number] = [
+        gizmoCenter[0] + dir[0] * gizmoScale,
+        gizmoCenter[1] + dir[1] * gizmoScale,
+        gizmoCenter[2] + dir[2] * gizmoScale,
+      ];
+      const tipSp = projectToScreen(tipWorld[0], tipWorld[1], tipWorld[2]);
+      if (!tipSp) continue;
+
+      let dist: number;
+      if (centerSp) {
+        // Distance from click to line segment (center → tip)
+        const segDx = tipSp[0] - centerSp[0];
+        const segDy = tipSp[1] - centerSp[1];
+        const segLenSq = segDx * segDx + segDy * segDy;
+        if (segLenSq < 1) {
+          // Degenerate segment — just check distance to tip
+          dist = Math.sqrt((screenX - tipSp[0]) ** 2 + (screenY - tipSp[1]) ** 2);
+        } else {
+          // Clamp t to [0.3, 1] to avoid hitting near the origin where axes overlap
+          let t = ((screenX - centerSp[0]) * segDx + (screenY - centerSp[1]) * segDy) / segLenSq;
+          t = Math.max(0.3, Math.min(1.0, t));
+          const closestX = centerSp[0] + t * segDx;
+          const closestY = centerSp[1] + t * segDy;
+          dist = Math.sqrt((screenX - closestX) ** 2 + (screenY - closestY) ** 2);
         }
+      } else {
+        dist = Math.sqrt((screenX - tipSp[0]) ** 2 + (screenY - tipSp[1]) ** 2);
       }
-      if (projected < 2) continue;
-      centerSx /= projected;
-      centerSy /= projected;
-      // Ensure a minimum hit area even when the square projects very small
-      const halfW = Math.max((maxSx - minSx) / 2, 10) + HANDLE_PAD;
-      const halfH = Math.max((maxSy - minSy) / 2, 10) + HANDLE_PAD;
-      // Check if click is inside the padded bounding box
-      if (
-        screenX >= centerSx - halfW && screenX <= centerSx + halfW &&
-        screenY >= centerSy - halfH && screenY <= centerSy + halfH
-      ) {
-        const dist = Math.sqrt((screenX - centerSx) ** 2 + (screenY - centerSy) ** 2);
-        if (dist < bestDist) {
-          bestDist = dist;
-          bestAxis = axis;
-        }
+
+      if (dist < AXIS_HIT_PX && dist < bestDist) {
+        bestDist = dist;
+        bestAxis = axis;
       }
     }
     if (bestAxis) return bestAxis;
