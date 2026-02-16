@@ -74,6 +74,89 @@ export default function App() {
     setStatusMessage(`Added cube (Object ${idx})`);
   }, [sceneRef, setObjectCount, setActiveObjectIndex, setStatusMessage]);
 
+  const handleAddPlane = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const idx = scene.addPlane(2.0);
+    setObjectCount(scene.objectCount());
+    setActiveObjectIndex(idx);
+    setStatusMessage(`Added plane (Object ${idx})`);
+  }, [sceneRef, setObjectCount, setActiveObjectIndex, setStatusMessage]);
+
+  const handleShadeSmooth = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().setShadeSmooth(true);
+    setStatusMessage("Shade Smooth");
+  }, [sceneRef, setStatusMessage]);
+
+  const handleShadeFlat = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().setShadeSmooth(false);
+    setStatusMessage("Shade Flat");
+  }, [sceneRef, setStatusMessage]);
+
+  const handleInvertSelection = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().invertSelection();
+    const mesh = obj.getMesh();
+    setMeshStats(mesh.vertexCount(), mesh.faceCount(), mesh.selectedFaceCount());
+    setStatusMessage("Selection inverted");
+  }, [sceneRef, setMeshStats, setStatusMessage]);
+
+  const handleMirrorX = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().scaleSelected(-1, 1, 1);
+    setStatusMessage("Mirrored on X axis");
+  }, [sceneRef, setStatusMessage]);
+
+  const handleMirrorY = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().scaleSelected(1, -1, 1);
+    setStatusMessage("Mirrored on Y axis");
+  }, [sceneRef, setStatusMessage]);
+
+  const handleMirrorZ = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().scaleSelected(1, 1, -1);
+    setStatusMessage("Mirrored on Z axis");
+  }, [sceneRef, setStatusMessage]);
+
+  const handleDuplicate = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const idx = scene.duplicateActiveObject();
+    setObjectCount(scene.objectCount());
+    setActiveObjectIndex(idx);
+    setStatusMessage("Object duplicated");
+  }, [sceneRef, setObjectCount, setActiveObjectIndex, setStatusMessage]);
+
+  const handleRecalcNormals = useCallback(() => {
+    const scene = sceneRef.current;
+    if (!scene) return;
+    const obj = scene.getActiveObject();
+    if (!obj) return;
+    obj.getMesh().recalcNormals();
+    setStatusMessage("Normals recalculated");
+  }, [sceneRef, setStatusMessage]);
+
   const handleExport3mf = useCallback(async () => {
     setStatusMessage("Exporting 3MF...");
     try {
@@ -108,6 +191,15 @@ export default function App() {
           onDelete={handleDelete}
           onToggleSelectAll={handleToggleSelectAll}
           onAddCube={handleAddCube}
+          onAddPlane={handleAddPlane}
+          onShadeSmooth={handleShadeSmooth}
+          onShadeFlat={handleShadeFlat}
+          onInvertSelection={handleInvertSelection}
+          onMirrorX={handleMirrorX}
+          onMirrorY={handleMirrorY}
+          onMirrorZ={handleMirrorZ}
+          onDuplicate={handleDuplicate}
+          onRecalcNormals={handleRecalcNormals}
         />
         <ViewportCanvas sceneRef={sceneRef} />
         <PropertiesPanel />

@@ -6,6 +6,15 @@ interface ToolbarProps {
   onDelete: () => void;
   onToggleSelectAll: () => void;
   onAddCube: () => void;
+  onAddPlane: () => void;
+  onShadeSmooth: () => void;
+  onShadeFlat: () => void;
+  onInvertSelection: () => void;
+  onMirrorX: () => void;
+  onMirrorY: () => void;
+  onMirrorZ: () => void;
+  onDuplicate: () => void;
+  onRecalcNormals: () => void;
 }
 
 /* ── SVG Icons (matching Blender's left toolbar) ── */
@@ -146,6 +155,97 @@ function MeasureIcon() {
   );
 }
 
+function AddPlaneIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      {/* Plane (diamond/parallelogram) */}
+      <path d="M3 12L10 7L17 12L10 17Z" />
+      {/* Plus sign */}
+      <line x1="15" y1="1" x2="15" y2="6" strokeWidth="1.6" />
+      <line x1="12.5" y1="3.5" x2="17.5" y2="3.5" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function ShadeSmoothIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      {/* Smooth-shaded sphere (gradient fill) */}
+      <defs>
+        <radialGradient id="smooth-grad" cx="40%" cy="35%" r="50%">
+          <stop offset="0%" stopColor="#e0e0e0" />
+          <stop offset="100%" stopColor="#404040" />
+        </radialGradient>
+      </defs>
+      <circle cx="10" cy="10" r="7.5" fill="url(#smooth-grad)" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function ShadeFlatIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+      {/* Flat-shaded cube face with distinct facets */}
+      <path d="M4 8L10 4L16 8L10 12Z" fill="#a0a0a0" stroke="currentColor" strokeWidth="1" />
+      <path d="M4 8L10 12L10 18L4 14Z" fill="#707070" stroke="currentColor" strokeWidth="1" />
+      <path d="M16 8L10 12L10 18L16 14Z" fill="#888888" stroke="currentColor" strokeWidth="1" />
+    </svg>
+  );
+}
+
+function InvertSelectionIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      {/* Selection box with inverted halves */}
+      <rect x="3" y="3" width="14" height="14" rx="1" />
+      {/* Left half filled (selected), right half empty */}
+      <rect x="3" y="3" width="7" height="14" rx="0" fill="currentColor" opacity="0.35" stroke="none" />
+      {/* Diagonal arrows suggesting inversion */}
+      <line x1="7" y1="13" x2="13" y2="7" strokeWidth="1.6" />
+      <polyline points="10,7 13,7 13,10" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function MirrorIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      {/* Dashed mirror line */}
+      <line x1="10" y1="2" x2="10" y2="18" strokeDasharray="2 2" />
+      {/* Left shape */}
+      <path d="M3 7L8 5L8 15L3 13Z" />
+      {/* Right shape (mirrored) */}
+      <path d="M17 7L12 5L12 15L17 13Z" />
+    </svg>
+  );
+}
+
+function DuplicateIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      {/* Back square */}
+      <rect x="6" y="6" width="11" height="11" rx="1" />
+      {/* Front square */}
+      <rect x="3" y="3" width="11" height="11" rx="1" fill="#303030" />
+      {/* Plus sign */}
+      <line x1="8.5" y1="6" x2="8.5" y2="12" strokeWidth="1.6" />
+      <line x1="5.5" y1="9" x2="11.5" y2="9" strokeWidth="1.6" />
+    </svg>
+  );
+}
+
+function RecalcNormalsIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round">
+      {/* Surface triangle */}
+      <path d="M3 16L10 4L17 16Z" />
+      {/* Outward arrow from center */}
+      <line x1="10" y1="12" x2="10" y2="5" strokeWidth="1.8" />
+      <polyline points="7.5,7.5 10,5 12.5,7.5" strokeWidth="1.8" />
+    </svg>
+  );
+}
+
 /* ── Toolbar Component ── */
 
 export function Toolbar({
@@ -154,6 +254,15 @@ export function Toolbar({
   onDelete,
   onToggleSelectAll,
   onAddCube,
+  onAddPlane,
+  onShadeSmooth,
+  onShadeFlat,
+  onInvertSelection,
+  onMirrorX,
+  onMirrorY,
+  onMirrorZ,
+  onDuplicate,
+  onRecalcNormals,
 }: ToolbarProps) {
   const { activeTool, setActiveTool, mode } = useSceneStore();
 
@@ -208,15 +317,34 @@ export function Toolbar({
       <Divider />
 
       <ToolIconBtn icon={<AddCubeIcon />} label="Add Cube" shortcut="" onClick={onAddCube} />
+      <ToolIconBtn icon={<AddPlaneIcon />} label="Add Plane" shortcut="" onClick={onAddPlane} />
+
+      <Divider />
+
+      <ToolIconBtn icon={<ShadeSmoothIcon />} label="Shade Smooth" shortcut="" onClick={onShadeSmooth} />
+      <ToolIconBtn icon={<ShadeFlatIcon />} label="Shade Flat" shortcut="" onClick={onShadeFlat} />
 
       {/* Edit mode tools */}
       {mode === "edit" && (
         <>
           <Divider />
           <ToolIconBtn icon={<SelectAllIcon />} label="Select All" shortcut="A" onClick={onToggleSelectAll} />
+          <ToolIconBtn icon={<InvertSelectionIcon />} label="Invert Selection" shortcut="" onClick={onInvertSelection} />
           <ToolIconBtn icon={<ExtrudeIcon />} label="Extrude" shortcut="E" onClick={onExtrude} />
           <ToolIconBtn icon={<SubdivideIcon />} label="Subdivide" shortcut="W" onClick={onSubdivide} />
+          <ToolIconBtn icon={<MirrorIcon />} label="Mirror X" shortcut="" onClick={onMirrorX} />
+          <ToolIconBtn icon={<MirrorIcon />} label="Mirror Y" shortcut="" onClick={onMirrorY} />
+          <ToolIconBtn icon={<MirrorIcon />} label="Mirror Z" shortcut="" onClick={onMirrorZ} />
+          <ToolIconBtn icon={<RecalcNormalsIcon />} label="Recalc Normals" shortcut="" onClick={onRecalcNormals} />
           <ToolIconBtn icon={<DeleteIcon />} label="Delete" shortcut="X" onClick={onDelete} />
+        </>
+      )}
+
+      {/* Object mode tools */}
+      {mode === "object" && (
+        <>
+          <Divider />
+          <ToolIconBtn icon={<DuplicateIcon />} label="Duplicate Object" shortcut="Shift+D" onClick={onDuplicate} />
         </>
       )}
     </div>

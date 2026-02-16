@@ -10,6 +10,15 @@ describe("Toolbar", () => {
     onDelete: vi.fn(),
     onToggleSelectAll: vi.fn(),
     onAddCube: vi.fn(),
+    onAddPlane: vi.fn(),
+    onShadeSmooth: vi.fn(),
+    onShadeFlat: vi.fn(),
+    onInvertSelection: vi.fn(),
+    onMirrorX: vi.fn(),
+    onMirrorY: vi.fn(),
+    onMirrorZ: vi.fn(),
+    onDuplicate: vi.fn(),
+    onRecalcNormals: vi.fn(),
   };
 
   beforeEach(() => {
