@@ -347,12 +347,16 @@ web/
     └── src/
         ├── types/wasm.d.ts       — TS interfaces for WASM module (EditMesh, Camera, Scene, etc.)
         ├── store/sceneStore.ts   — Zustand store (mode, activeTool, mesh stats, status)
+        ├── utils/
+        │   ├── export3mf.ts      — 3MF export: vertex dedup, XML gen, ZIP packaging, download
+        │   └── extractSceneMeshes.ts — Bridge: Scene API → MeshExportData for WASM & fallback
         ├── hooks/
         │   ├── useViewport.ts    — WebGL rendering, orbit/pan/zoom camera
         │   └── useMeshOperations.ts — Mesh ops + modal tool state (grab/rotate/scale)
         └── components/
-            ├── App.tsx           — Root layout
+            ├── App.tsx           — Root layout + export handler wiring
             ├── ViewportCanvas.tsx — WebGL canvas + keyboard/mouse + overlay wrapper
+            ├── HeaderBar.tsx     — Top bar: mode buttons + Export 3MF button
             ├── Toolbar.tsx       — Left toolbar with tool icons + active highlighting
             ├── AnnotationOverlay.tsx — 2D freehand drawing overlay
             └── MeasureOverlay.tsx   — Click-to-measure distance overlay
@@ -371,22 +375,38 @@ web/
 | Select All | A | One-shot | `toggleSelectAll()` |
 | Grab/Move | G | Modal | Mouse → `translateSelected`, click confirm, Escape cancel |
 | Rotate | R | Modal | Mouse dx → Y-axis rotation via quaternion, click/Escape |
-| Scale | S | Modal | Mouse dx → uniform scale, click/Escape |
+| Scale | S / gizmo | Modal | Mouse dx → per-axis or uniform scale via gizmo, click/Escape |
 | Extrude | E | One-shot | `extrudeSelectedFaces(0.5)` |
 | Subdivide | W | One-shot | `subdivideSelectedFaces()` |
 | Delete | X / Del | One-shot | `deleteSelectedFaces()` |
 | Annotate | toolbar | Persistent | 2D canvas overlay, freehand white polylines |
 | Measure | toolbar | Persistent | 2D canvas overlay, click two points → dashed line + px label |
 | Add Cube | toolbar | One-shot | `scene.addCube()` |
+| Export 3MF | header btn | One-shot | Downloads `.3mf` ZIP (vertex dedup, XML, jszip) |
 
 ### Tool Type (Zustand store)
 ```typescript
 type Tool = "select" | "grab" | "rotate" | "scale" | "annotate" | "measure";
 ```
-Extrude/Subdivide/Delete are one-shot actions, not persistent tool modes.
+Extrude/Subdivide/Delete/Export are one-shot actions, not persistent tool modes.
 
 ### Cursor Feedback
 Each tool maps to a CSS cursor. Modal overrides: grab active → `grabbing`, rotate active → `grabbing`, scale active → `col-resize`.
+
+### 3MF Export System
+- **Format**: 3MF is a ZIP (OPC) archive containing XML describing vertices/triangles
+- **Pipeline**: `extractSceneMeshes()` → `deduplicateMesh()` → `build3mfModelXml()` → `jszip` ZIP → browser download
+- **Scale**: `DEFAULT_SCALE_MM = 5` (1 Blender unit = 5mm, so default 2-unit cube = 10mm = 1cm)
+- **WASM compatibility**: `extractSceneMeshes()` uses `typeof obj.getName === "function"` guard for older WASM builds missing `getName` binding; falls back to `"Object N"`
+- **Fallback mode**: When WASM isn't loaded, exports the JS fallback cube geometry via `extractFallbackCubeMesh()`
+- **Dependencies**: `jszip` (v3.x, bundles its own TS types)
+
+### Modal Tool Interaction Model
+- Modal tools (grab/rotate/scale) use refs (`grabActiveRef`, `rotateActiveRef`, `scaleActiveRef`) for synchronous state
+- **Confirmation click**: When clicking to confirm a modal, `isDraggingRef` is cleared to prevent the confirmation click from leaking into camera orbit
+- **Scale gizmo**: Clicking on axis handles constrains to that axis; clicking elsewhere defaults to uniform scaling (`?? "uniform"` fallback)
+- **Axis constraint**: During active scale modal, pressing X/Y/Z keys constrains to that axis
+- **Camera controls during modals**: Left-click is consumed by the modal; middle-mouse orbit and right-mouse pan remain available
 
 ---
 
@@ -395,7 +415,8 @@ Each tool maps to a CSS cursor. Modal overrides: grab active → `grabbing`, rot
 - **Commits**: Every 30-60 minutes, conventional commit messages
 - **Branch**: `claude_code_hackathon` (working branch)
 - **Build**: WASM via Emscripten (`emcmake cmake` + `emmake make`), React via Vite
-- **Testing**: Manual browser testing (`npm run dev`)
+- **Testing**: Vitest (`npm run test:run`), manual browser testing (`npm run dev`)
+- **Dependencies**: React 19, Zustand 5, jszip 3 (for 3MF export), Vite 6
 
 ---
 
@@ -410,13 +431,16 @@ web/wasm/src/bindings.cc                         — Emscripten embind JS ↔ C+
 web/wasm/CMakeLists.txt                          — WASM build config
 web/app/src/types/wasm.d.ts                      — TS types for WASM module
 web/app/src/store/sceneStore.ts                  — Zustand store (Tool, EditMode, state)
+web/app/src/utils/export3mf.ts                   — 3MF export: dedup, XML, ZIP, download
+web/app/src/utils/extractSceneMeshes.ts          — Scene → MeshExportData bridge (WASM + fallback)
 web/app/src/hooks/useViewport.ts                 — WebGL rendering + camera controls
 web/app/src/hooks/useMeshOperations.ts           — Mesh ops + modal tool state
 web/app/src/components/ViewportCanvas.tsx         — Canvas + keyboard/mouse + overlays
+web/app/src/components/HeaderBar.tsx              — Top bar: mode buttons + Export 3MF button
 web/app/src/components/Toolbar.tsx                — Left toolbar (SVG icons, tool switching)
 web/app/src/components/AnnotationOverlay.tsx      — 2D freehand drawing overlay
 web/app/src/components/MeasureOverlay.tsx         — Distance measurement overlay
-web/app/src/components/App.tsx                    — Root layout
+web/app/src/components/App.tsx                    — Root layout + export handler wiring
 ```
 
 ### Blender Source (via `git show HEAD:<path>`)
