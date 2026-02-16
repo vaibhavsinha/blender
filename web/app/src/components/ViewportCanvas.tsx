@@ -12,7 +12,7 @@ const TOOL_CURSORS: Record<Tool, string> = {
   select: "default",
   grab: "move",
   rotate: "grab",
-  scale: "ew-resize",
+  scale: "default",
   annotate: "crosshair",
   measure: "crosshair",
 };
@@ -53,7 +53,7 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
     } else if (meshOps.rotateActiveRef.current) {
       setCursor("grabbing");
     } else if (meshOps.scaleActiveRef.current) {
-      setCursor("col-resize");
+      setCursor("default");
     } else {
       setCursor(TOOL_CURSORS[activeTool] || "default");
     }
@@ -248,8 +248,13 @@ export function ViewportCanvas({ sceneRef }: ViewportCanvasProps) {
 
       // Scale mode: per-axis or uniform
       if (meshOps.scaleActiveRef.current) {
-        const factor = 1 + dx * 0.005;
         const axis = scaleAxisRef.current;
+        let factor: number;
+        if (axis === "y") {
+          factor = 1 - dy * 0.005; // vertical: drag up = scale up (screen Y inverted)
+        } else {
+          factor = 1 + dx * 0.005; // X, Z, and uniform: horizontal
+        }
         let sx = 1, sy = 1, sz = 1;
         if (axis === "x") sx = factor;
         else if (axis === "y") sy = factor;

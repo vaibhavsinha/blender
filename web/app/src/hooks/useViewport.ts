@@ -553,25 +553,70 @@ export function useViewport(
       return [sx, sy];
     };
 
-    // Check axis handle endpoints (within 15px)
-    const axes: Array<{ axis: "x" | "y" | "z"; dir: [number, number, number] }> = [
-      { axis: "x", dir: [1, 0, 0] },
-      { axis: "y", dir: [0, 1, 0] },
-      { axis: "z", dir: [0, 0, 1] },
+    // Check axis handle squares — project all 4 corners to screen, compute
+    // screen-space bounding box, and test if click is inside (with padding).
+    // Pick the closest axis if multiple overlap.
+    const h = GIZMO_HANDLE_HALF;
+    const axes: Array<{
+      axis: "x" | "y" | "z";
+      corners: [number, number, number][];
+    }> = [
+      { axis: "x", corners: [
+        [1, -h, -h], [1, h, -h], [1, h, h], [1, -h, h],
+      ]},
+      { axis: "y", corners: [
+        [-h, 1, -h], [h, 1, -h], [h, 1, h], [-h, 1, h],
+      ]},
+      { axis: "z", corners: [
+        [-h, -h, 1], [h, -h, 1], [h, h, 1], [-h, h, 1],
+      ]},
     ];
 
-    for (const { axis, dir } of axes) {
-      const wp: [number, number, number] = [
-        gizmoCenter[0] + dir[0] * gizmoScale,
-        gizmoCenter[1] + dir[1] * gizmoScale,
-        gizmoCenter[2] + dir[2] * gizmoScale,
-      ];
-      const sp = projectToScreen(wp[0], wp[1], wp[2]);
-      if (sp) {
-        const dist = Math.sqrt((screenX - sp[0]) ** 2 + (screenY - sp[1]) ** 2);
-        if (dist < 15) return axis;
+    const HANDLE_PAD = 8; // extra screen pixels around the projected square
+    let bestAxis: "x" | "y" | "z" | null = null;
+    let bestDist = Infinity;
+
+    for (const { axis, corners } of axes) {
+      let minSx = Infinity, maxSx = -Infinity;
+      let minSy = Infinity, maxSy = -Infinity;
+      let projected = 0;
+      let centerSx = 0, centerSy = 0;
+      for (const [lx, ly, lz] of corners) {
+        const wp: [number, number, number] = [
+          gizmoCenter[0] + lx * gizmoScale,
+          gizmoCenter[1] + ly * gizmoScale,
+          gizmoCenter[2] + lz * gizmoScale,
+        ];
+        const sp = projectToScreen(wp[0], wp[1], wp[2]);
+        if (sp) {
+          minSx = Math.min(minSx, sp[0]);
+          maxSx = Math.max(maxSx, sp[0]);
+          minSy = Math.min(minSy, sp[1]);
+          maxSy = Math.max(maxSy, sp[1]);
+          centerSx += sp[0];
+          centerSy += sp[1];
+          projected++;
+        }
+      }
+      if (projected < 2) continue;
+      centerSx /= projected;
+      centerSy /= projected;
+      // Ensure a minimum hit area even when the square projects very small
+      const halfW = Math.max((maxSx - minSx) / 2, 10) + HANDLE_PAD;
+      const halfH = Math.max((maxSy - minSy) / 2, 10) + HANDLE_PAD;
+      // Check if click is inside the padded bounding box
+      if (
+        screenX >= centerSx - halfW && screenX <= centerSx + halfW &&
+        screenY >= centerSy - halfH && screenY <= centerSy + halfH
+      ) {
+        const dist = Math.sqrt((screenX - centerSx) ** 2 + (screenY - centerSy) ** 2);
+        if (dist < bestDist) {
+          bestDist = dist;
+          bestAxis = axis;
+        }
       }
     }
+    if (bestAxis) return bestAxis;
 
     // Check circle: sample points around the circle and find closest
     const fwdLen = cameraDist || 1;
